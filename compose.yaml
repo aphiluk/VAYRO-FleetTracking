@@ -41,3 +41,17 @@ services:
     init: true
     restart: unless-stopped
     healthcheck: *healthcheck
+
+  tracking-service:
+    build:
+      context: .
+      target: api
+      args:
+        SERVICE: services/tracking-service
+    environment:
+        TRACKING_API_TOKENS: "${TRACKING_API_TOKENS:-}"
+    ports:
+      - "127.0.0.1:${TRACKING_PORT:-3003}:3000"
+    init: true
+    restart: unless-stopped
+    healthcheck: *healthcheck
