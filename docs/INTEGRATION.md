@@ -1,30 +1,20 @@
-# Auth/User + GPS integration review
+# Auth/User + PostgreSQL GPS integration
 
-This branch preserves PR #1's GPS implementation and adds compatibility with the Authentication/User backend. It is a **demo integration branch**, not a claim that GPS Device/Data is complete against the specification. Frontend changes remain local and excluded from all Backend commits.
+The integration branch combines Auth/User with the original GPS contribution and replaces its in-memory persistence with PostgreSQL. All 14 Data Dictionary tables exist. This is a Backend integration for team review; it does not implement all service modules or real GPS provider adapters.
 
-## What changed
+- Auth/User, Gateway and GPS Device/Data share PostgreSQL identities, company isolation and session checks.
+- User runs on 3003, Tracking on 3004, Gateway on 3001.
+- GPS uses canonical field names and BIGINT strings, validates real vehicle ownership, persists duplicate checks/history and survives Tracking restart.
+- Migration 003 adds ten tables and same-company constraints; no old rows are deleted.
+- Frontend files are untouched by this task. Other services have table foundations but their APIs are not implemented.
 
-- Resolved `.env.example`, `Dockerfile`, `compose.yaml` conflicts by preserving both sets of services.
-- User Service stays on host 3003; Tracking moves to 3004. Gateway exposes auth, users, gps-devices and gps paths on 3001.
-- Added Tracking to root `bun.lock`, kept frozen installs and aligned Elysia with the existing backend version.
-- Human GPS calls use Authentication's signed session JWT and current database role/company/status. Reused the guard rather than adding an independent user-token verifier.
-- Static device credentials remain limited to ingestion. Static admin credentials are rejected; inactive/missing device workspaces are denied.
-- GPS responses use the common API envelope. Existing GPS payloads and prototype persistence behavior are retained and documented in `services/tracking-service/README.md`.
+## Before connecting another service or Frontend
 
-## Verification
+- Apply migrations 002 and 003 to an existing database; never delete its volume to upgrade. New databases initialize automatically.
+- Use BIGINT string IDs and canonical GPS fields. The old prototype payloads and static user tokens are rejected.
+- Device credentials use TRACKING_API_TOKENS with company_id and device_code; they are separate from user Login JWTs and future external Integration API keys.
+- Driver mobile ingestion requires an assigned active vehicle and an in_progress assigned transport job. Vehicle/Job APIs are not included; local tests prepare fixtures through SQL.
+- GPS DELETE disables the connection while retaining data. The disabled flag in connection_config and timing/query policies are implementation choices documented in the shared contract.
+- Auth/User refresh rotates tokens: serialize refresh and never retry a consumed token automatically. Use the shared Auth guard for other protected Backend APIs.
 
-```sh
-docker compose up --build -d --wait postgres auth-service user-service tracking-service gateway
-node services/auth-service/test/e2e.mjs
-node services/user-service/test/e2e.mjs
-docker compose exec -T auth-service bun test test/security.test.ts
-docker compose exec -T tracking-service bun test
-```
-
-The GPS integration tests create local database fixtures, obtain JWTs from the real Authentication container, exercise device registration/ingestion with an in-process Tracking app, and check HTTP routing through the Gateway/Tracking containers. Tests leave their local test accounts/companies in place. Do not use production data. Backend images are also verified from a clean Git archive to exclude uncommitted local Frontend files.
-
-## Merge guidance
-
-Auth/User is independently backed up in its own branch/PR. The integration branch contains both that work and PR #1, including conflict resolutions. Do not separately apply the original GPS config over the integration config: it uses port 3003 and static user tokens.
-
-Keep the integration PR in draft until the team accepts the GPS demo scope or completes persistent storage, vehicle/company foreign keys, Data Dictionary payload/ID alignment and provider/device lifecycle behavior. No GPS data persistence or real hardware tests are included in this integration change. Main and the original PR remain unchanged while this draft is reviewed.
+See [DATABASE.md](DATABASE.md) for validation results and migrations, [API_DATA_CONTRACT.md](API_DATA_CONTRACT.md) for representation/policy choices, and [Postman instructions](postman/README.md) for API testing. Frontend and real-provider/hardware integration still need their own end-to-end verification. Publishing this branch does not merge it into main.

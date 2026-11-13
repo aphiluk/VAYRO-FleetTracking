@@ -87,3 +87,54 @@ export interface ChangeUserRoleRequest {
 export interface ChangeUserStatusRequest {
   account_status: AccountStatus;
 }
+
+// GPS contract follows the PDF dictionary; BIGINT ids are JSON strings everywhere.
+export type GpsSourceType = "gps_device" | "provider_api" | "driver_mobile_app";
+export type GpsConnectionStatus = "connected" | "disconnected" | "error";
+export interface GpsDevice {
+  gps_device_id: string;
+  company_id: string;
+  vehicle_id: string;
+  device_code: string;
+  source_type: GpsSourceType;
+  provider_name: string | null;
+  connection_config: Record<string, unknown> | null;
+  connection_status: GpsConnectionStatus;
+  last_received_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+export interface CreateGpsDeviceRequest {
+  company_id?: string;
+  vehicle_id: string;
+  device_code: string;
+  source_type: GpsSourceType;
+  provider_name?: string | null;
+  connection_config?: Record<string, unknown> | null;
+}
+export type UpdateGpsDeviceRequest = Partial<Omit<CreateGpsDeviceRequest, "company_id">>;
+export interface IngestGpsRequest {
+  device_code: string;
+  external_record_id?: string | null;
+  latitude: number;
+  longitude: number;
+  speed_kmh?: number | null;
+  direction_degree?: number | null;
+  accuracy_meters?: number | null;
+  recorded_at: string;
+}
+export interface GpsLocation {
+  gps_location_id: string;
+  company_id: string;
+  vehicle_id: string;
+  gps_device_id: string | null;
+  external_record_id: string | null;
+  latitude: number;
+  longitude: number;
+  speed_kmh: number | null;
+  direction_degree: number | null;
+  accuracy_meters: number | null;
+  recorded_at: string;
+  received_at: string;
+  freshness: "current" | "delayed";
+}

@@ -11,7 +11,7 @@ User endpoints now run separately in `services/user-service`, reached through th
 | `company` | `company_id`, `workspace_status` | Company accounts require an active workspace. Pending, suspended and rejected are denied. |
 | `auth_sessions` | `session_id`, `user_id`, `refresh_token_hash`, `expires_at`, `revoked_at`, `last_used_at`, `ip_address`, `user_agent`, `created_at` | Refresh secret stored as SHA-256 only; FK to users; unique hash; index `(user_id, expires_at)`. |
 
-PostgreSQL uses identity BIGINT instead of AUTO_INCREMENT, TIMESTAMPTZ instead of DATETIME, and CHECK constraints instead of MySQL ENUM. IDs are JSON strings to preserve BIGINT precision. `system_log` records audit events without credentials. See [database scope, implementation decisions and safe migration](DATABASE.md): the PDF has 14 tables; Auth/User implements four. Existing databases should apply `002_align_auth_dictionary.sql` to fix earlier contact/audit dictionary mismatches without resetting data.
+PostgreSQL uses identity BIGINT, TIMESTAMPTZ and CHECK constraints to represent the PDF's examples. IDs are JSON strings. The shared database now implements all 14 dictionary tables; Auth/User uses four of them. Existing databases apply migrations 002 and 003 without resetting data; see [DATABASE.md](DATABASE.md) and [the shared API contract](API_DATA_CONTRACT.md).
 
 ## Verification
 

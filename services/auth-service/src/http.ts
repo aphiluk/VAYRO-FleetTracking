@@ -52,6 +52,10 @@ export const http = new Elysia({ name: "http" })
       status = 409;
       errCode = "CONFLICT";
       message = "Resource already exists";
+    } else if ((error as { errno?: string }).errno === "23503") {
+      status = 409;
+      errCode = "CONFLICT";
+      message = "Resource is referenced or its relationship is invalid";
     } else {
       // message only: never log request bodies (passwords) or tokens
       console.error(`[${requestId}]`, error instanceof Error ? error.message : "unknown error");

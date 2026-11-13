@@ -3,10 +3,12 @@
 This branch delivers Backend APIs only. The web prototype previously tested locally is not included in this Backend change; the committed web remains the original Next.js scaffold. Frontend integration is owned separately.
 
 โครงเริ่มต้นของระบบติดตามรถหลายบริษัท ใช้ Next.js, Elysia และ Bun workspaces
-ขณะนี้เว็บมี Login, สมัครบริษัท, Dashboard และจัดการผู้ใช้; Authentication Service ทำ Login/Refresh/Logout ส่วน User API แยกรันใน user-service
-(ดู [docs/AUTH.md](docs/AUTH.md)) ผ่าน gateway และ PostgreSQL ยังไม่มี GPS tracking หรือ business logic อื่น
+Backend ปัจจุบันมี Authentication, User และ GPS Device/Data ที่บันทึก PostgreSQL โดยใช้ schema ครบ 14 ตารางตาม Data Dictionary
+ดู [Auth](docs/AUTH.md), [User](docs/USER.md), [ฐานข้อมูลกลาง](docs/DATABASE.md) และ [สัญญาข้อมูล API](docs/API_DATA_CONTRACT.md); API ของโมดูลธุรกิจอื่นยังไม่ได้สร้าง
 
 ## รันด้วย Docker
+
+Existing databases: apply migrations 002 and 003 using docs/DATABASE.md before using the GPS endpoints. New volumes initialize all fourteen tables automatically. Do not reset the volume to upgrade.
 
 ติดตั้งและเปิด Docker Desktop (Linux containers) พร้อม Docker Compose v2 แล้วรัน:
 
@@ -19,18 +21,18 @@ docker compose up --build -d --wait
 
 | บริการ | URL บนเครื่อง |
 | --- | --- |
-| Web | http://localhost:3000 (เริ่มที่ `/login` หรือ `/register`) |
+| Web (optional; separate Frontend work) | http://localhost:3000 |
 | Gateway | http://localhost:3001 |
 | Authentication service | http://localhost:3002 |
 | User service | http://localhost:3003 |
-| Tracking service (GPS demo) | http://localhost:3004 |
+| GPS Device/Data (PostgreSQL) | http://localhost:3004 |
 
-Auth/User and the incoming GPS demo are combined on the integration branch. See [integration status and remaining GPS limitations](docs/INTEGRATION.md) before merging. The GPS demo still keeps devices/positions in memory.
+The Backend schema contains all 14 Data Dictionary tables, with PostgreSQL-backed GPS Device/Data. See [shared schema and migration commands](docs/DATABASE.md), [API field contract](docs/API_DATA_CONTRACT.md) and [integration status](docs/INTEGRATION.md).
 
 แต่ละ container ใช้พอร์ต 3000 ภายในและ bind host port เฉพาะ localhost
 Compose มี PostgreSQL (ไม่เปิดพอร์ตออกเครื่อง) ที่สร้างตารางจาก `infra/database/*.sql` ตอนสร้าง volume ครั้งแรก
 ต้องมี `.env` (`POSTGRES_PASSWORD`, `JWT_SECRET`) ก่อนรัน ไม่มีข้อมูล GPS จริงในชุดนี้
-gateway ส่ง /api/v1/auth ไป Authentication Service และ /api/v1/users ไป User Service โดยทั้งสองใช้ PostgreSQL เดียวกัน
+gateway ส่ง /api/v1/auth, /api/v1/users และ /api/v1/gps* ไป Backend ที่เกี่ยวข้อง โดยใช้ PostgreSQL เดียวกัน
 health check ตรวจ HTTP `/` ของแต่ละบริการ ไม่ได้ตรวจฟังก์ชันธุรกิจ
 
 ```sh

@@ -56,3 +56,5 @@ The command hashes the password, sets company_id NULL and role platform_admin, a
 All User API mutations and their `system_log` entry commit or roll back together. Old/new values contain only safe profile/role/status fields as JSON objects. Passwords, hashes, tokens and Authorization headers are never included. Historical logs written by the earlier version as JSON strings are retained unchanged.
 
 The existing PostgreSQL schema already has the required fields, lengths, roles, statuses, identity PKs, user/company FK and role/company CHECK constraint. There is no schema reset or extra user table. `updated_at` is set by the update statements, corresponding to the dictionary's automatic update timestamp.
+
+The shared schema now contains all fourteen dictionary tables and automatic updated_at triggers. Same-company foreign keys protect references from vehicles, jobs and alerts. An attempt to promote/move a user out of a company while company-bound records still reference them returns 409 and rolls back, rather than breaking those references. See DATABASE.md and API_DATA_CONTRACT.md.
