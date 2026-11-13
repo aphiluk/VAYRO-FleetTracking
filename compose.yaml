@@ -12,11 +12,35 @@ services:
     build:
       context: .
       target: web
+    environment:
+      API_URL: http://gateway:3000
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    depends_on:
+      gateway:
+        condition: service_healthy
     ports:
       - "127.0.0.1:${WEB_PORT:-3000}:3000"
     init: true
     restart: unless-stopped
     healthcheck: *healthcheck
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: vayro
+      POSTGRES_USER: vayro
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?copy .env.example to .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Init SQL runs on a new volume only. For existing data, apply numbered migrations; never reset the volume.
+      - ./infra/database:/docker-entrypoint-initdb.d:ro
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vayro -d vayro"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   gateway:
     build:
@@ -24,6 +48,11 @@ services:
       target: api
       args:
         SERVICE: gateway
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:3000
+      USER_SERVICE_URL: http://user-service:3000
+      TRACKING_SERVICE_URL: http://tracking-service:3000
+      WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-3001}:3000"
     init: true
@@ -36,8 +65,54 @@ services:
       target: api
       args:
         SERVICE: services/auth-service
+    environment:
+      DATABASE_URL: postgres://vayro:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/vayro
+      JWT_SECRET: ${JWT_SECRET:?copy .env.example to .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "127.0.0.1:${AUTH_PORT:-3002}:3000"
     init: true
     restart: unless-stopped
     healthcheck: *healthcheck
+
+  user-service:
+    build:
+      context: .
+      target: api
+      args:
+        SERVICE: services/user-service
+    environment:
+      DATABASE_URL: postgres://vayro:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/vayro
+      JWT_SECRET: ${JWT_SECRET:?copy .env.example to .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${USER_PORT:-3003}:3000"
+    init: true
+    restart: unless-stopped
+    healthcheck: *healthcheck
+
+  tracking-service:
+    build:
+      context: .
+      target: api
+      args:
+        SERVICE: services/tracking-service
+    environment:
+      DATABASE_URL: postgres://vayro:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/vayro
+      JWT_SECRET: ${JWT_SECRET:?copy .env.example to .env}
+      TRACKING_API_TOKENS: "${TRACKING_API_TOKENS:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${TRACKING_PORT:-3004}:3000"
+    init: true
+    restart: unless-stopped
+    healthcheck: *healthcheck
+
+volumes:
+  pgdata:

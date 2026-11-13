@@ -1,5 +1,7 @@
 # VAYRO Fleet Tracking: Project and System Structure
 
+Backend branch note: web prototype details in this local inventory are reference only. Frontend prototype changes are excluded from the Backend commit; the committed web is the original scaffold.
+
 เอกสารนี้อธิบายทั้งโครงสร้างที่มีอยู่จริงใน repository และโครงสร้างเป้าหมายสำหรับพัฒนาต่อ แยกสองส่วนนี้ไว้ชัดเจนเพื่อไม่ให้เข้าใจว่าโฟลเดอร์หรือฟีเจอร์ที่ยังไม่ได้สร้างมีอยู่แล้ว
 
 ## 1. ภาพรวมโครงการ
@@ -24,50 +26,29 @@
 
 **ยังไม่กำหนด:** framework ที่ใช้สร้าง APK, ผู้ให้บริการแผนที่/tiles, รูปแบบ protocol ของ GPS ภายนอก และค่าความถี่ส่งตำแหน่งจริง ให้เลือกเมื่อมี requirement หรือแหล่งข้อมูลพร้อม
 
-## 3. โครงสร้างปัจจุบันใน repository
+## 3. Current local implementation (2026-11-13)
 
-รายการด้านล่างสะท้อนสิ่งที่พบใน repository ตอนจัดทำเอกสารนี้เท่านั้น
+The Data Dictionary is the shared database source. All fourteen tables now exist; this does not imply that all twelve service modules have REST implementations. The integration change covers Backend/schema/docs; Frontend work is separate.
 
 ```text
-.
-├── apps/
-│   └── web/                         # มี: Next.js app scaffold
-│       ├── app/                     # มี: page.tsx, layout.tsx, globals.css
-│       ├── public/                  # มี: assets เริ่มต้นของ Next.js
-│       ├── AGENTS.md                # มี: กฎเฉพาะ Next.js (ให้คง generated block ไว้)
-│       ├── next.config.ts
-│       └── package.json
-├── gateway/
-│   ├── src/index.ts                 # มี: Elysia hello-world scaffold
-│   ├── package.json
-│   └── README.md
-├── services/
-│   └── auth-service/                # มี: Elysia hello-world scaffold
-│       ├── src/index.ts
-│       ├── package.json
-│       └── README.md
-├── packages/
-│   └── shared-types/                # มี: package TypeScript เริ่มต้น
-│       ├── index.ts
-│       └── package.json
-├── AGENTS.md                        # คู่มือสำหรับ Codex ที่ root
-├── docs/PROJECT_STRUCTURE.md        # เอกสารโครงสร้างนี้
-├── package.json                     # Bun workspaces และสคริปต์ dev บางส่วน
-├── Dockerfile                       # มี: build targets สำหรับ web และ APIs
-├── compose.yaml                     # มี: web, gateway, auth-service และ health checks
-├── .dockerignore                    # กัน dependencies, build output และ secrets ออกจาก image
-├── .env.example                     # ตัวอย่างพอร์ตสำหรับ local Docker
-└── bun.lock
+apps/web/                            # Frontend is a separate responsibility
+services/auth-service/               # Authentication + existing company registration helper
+services/user-service/               # User management and own profile
+services/tracking-service/           # GPS Device/Data, now PostgreSQL-backed
+packages/shared-types/               # Shared Auth/User/GPS request/response types
+gateway/                            # JWT-preserving routing for implemented APIs
+infra/database/001_auth.sql          # Four initial Auth/User tables
+infra/database/002_align_auth_dictionary.sql
+infra/database/003_fleet_dictionary.sql  # Remaining ten tables and ownership constraints
+docs/data-dictionary.json            # Machine-readable 14-table field contract
+docs/API_DATA_CONTRACT.md            # Canonical fields and API representation
+docs/DATABASE.md                     # Safe migrations and schema verification
+compose.yaml                        # PostgreSQL + Auth/User/GPS/Gateway + optional Web
 ```
 
-### สถานะจริงที่ควรรู้
+Implemented: Auth four endpoints, User eight endpoints, and the existing GPS Device/Data endpoints using persisted data. GPS validates real vehicles and company ownership, accepts assigned Driver mobile data during an in-progress job, and preserves positions after Tracking restart. GPS provider adapters, encrypted-provider credential management, other domain service APIs, APK and real hardware remain separate work. Vehicle/Job/Alert/Geofence/Integration tables are ready for their service owners.
 
-- Root ใช้ Bun workspaces ครอบ `apps/*`, `gateway`, `services/*`, `packages/*`.
-- หน้าเว็บ, gateway, auth-service และ shared-types ยังเป็น scaffold; business logic ของระบบติดตามยังไม่ได้เริ่มในไฟล์เหล่านี้
-- มี Dockerfile และ Compose สำหรับรัน web, gateway และ auth-service พร้อม health checks; ดูวิธีรันใน root README.md
-- ยังไม่พบ `vehicle-service`, `tracking-service`, `notification-service`, แอป Android/APK, การเชื่อม PostgreSQL/PostgREST หรือ Three.js
-- สคริปต์ root มี `dev:vehicle`, `dev:tracking`, `dev:notification` ซึ่งชี้ไปยัง service folders ที่ยังไม่มี ควรสร้าง service ที่เกี่ยวข้องก่อนใช้สคริปต์นั้น
-- มี `AGENTS.md` ใน `apps/web`; ให้ปฏิบัติตามกฎนั้นควบคู่กับ root `AGENTS.md` เมื่อแก้หน้าเว็บ โดยเฉพาะข้อให้อ่านเอกสาร Next.js ที่ติดตั้งอยู่ก่อนเปลี่ยน API
+Root dev scripts for Vehicle/Notification still point at services not yet implemented. See the shared contract before writing those APIs; do not invent alternate field spellings. IDs are BIGINT strings; timestamps are UTC ISO 8601; GPS values use speed_kmh, direction_degree, accuracy_meters and gps_location_id.
 
 ## 4. โครงสร้างเป้าหมายที่แนะนำ
 
@@ -80,8 +61,10 @@
 │   └── driver-android/              # เป้าหมาย: แอป Driver และ APK demo (ยังไม่เลือก framework)
 ├── gateway/                         # Elysia: API entry, auth, validation, routing
 ├── services/
-│   ├── auth-service/                # บัญชี, session/token, role และ membership
-│   ├── vehicle-service/             # บริษัท, รถ, ประเภทรถ และการมอบหมายผู้ขับ
+│   ├── auth-service/                # Login, session/token และการตรวจตัวตน
+│   ├── user-service/                # บัญชี, role, account_status และโปรไฟล์
+│   ├── company-service/             # เป้าหมาย: บริษัทและสถานะ Workspace
+│   ├── vehicle-service/             # รถ, ประเภทรถ และการมอบหมายผู้ขับ
 │   ├── tracking-service/            # ingest GPS, normalize, validate, history, freshness
 │   ├── transport-service/           # งานขนส่ง, จุดรับ/ส่ง, สถานะงาน
 │   ├── notification-service/        # กฎแจ้งเตือนและสถานะการจัดการ
@@ -94,7 +77,7 @@
 ├── docs/
 │   ├── PROJECT_STRUCTURE.md
 │   └── api/                         # สัญญา API เมื่อเริ่มกำหนด endpoint
-├── docker-compose.yml               # เป้าหมาย: รัน stack สำหรับ dev/demo
+├── compose.yaml                     # รัน stack สำหรับ dev/demo
 └── .env.example                     # ตัวอย่างชื่อตัวแปรเท่านั้น ไม่มี secret จริง
 ```
 
@@ -118,25 +101,25 @@ GPS provider ───────┘                           │
 1. Web และ APK ส่ง request ไป backend เท่านั้น; ห้ามฝัง database credential หรือเรียกฐานข้อมูลโดยตรงจาก client
 2. Backend ตรวจสิทธิ์และ company/workspace scope ทุกครั้งก่อนอ่านหรือเขียนข้อมูล
 3. Adapter ของแต่ละแหล่ง GPS แปลงข้อมูลเข้าแบบข้อมูลกลางเดียวกัน
-4. เก็บ `sourceTimestamp` (เวลาที่อุปกรณ์วัดตำแหน่ง) และ `receivedAt` (เวลาที่ server ได้รับ) แยกกัน เพื่อวัดความล่าช้าและทำเครื่องหมายข้อมูลเก่า
+4. เก็บ `recorded_at` (เวลาที่อุปกรณ์วัดตำแหน่ง) และ `received_at` (เวลาที่ server ได้รับ) แยกกัน เพื่อวัดความล่าช้าและทำเครื่องหมายข้อมูลเก่า
 5. Three.js แสดงข้อมูลที่ API ส่งให้ ไม่เป็นผู้คำนวณหรือยืนยันความถูกต้องของ GPS เอง
 
 ## 6. โดเมนข้อมูลหลัก
 
 | กลุ่ม | ข้อมูลสำคัญ | ข้อสังเกต |
 | --- | --- | --- |
-| Company / Workspace | รหัส, ชื่อ, สถานะ | ทุกข้อมูลธุรกิจต้องอยู่ใต้ tenant ที่ระบุชัด |
-| User / Membership | ผู้ใช้, บริษัท, role, account status | ผู้ใช้อาจมีสิทธิ์ตาม membership; ตรวจสิทธิ์ฝั่ง server |
-| Vehicle | รหัสรถ, ทะเบียน, ประเภท, สถานะ, บริษัท | ไม่เชื่อมกับ Driver ถาวรหากมีการมอบหมายเป็นรายงาน |
-| GPS Source / Device | รหัสอุปกรณ์/แหล่ง, provider, สถานะการเชื่อมต่อ | รองรับทั้งอุปกรณ์จริงและโทรศัพท์ demo ผ่าน adapter |
-| GPS Position | รถ/แหล่ง, latitude, longitude, speed, heading, sourceTimestamp, receivedAt | ค่า sensor ที่ไม่มีแหล่งรองรับต้องเป็น unknown/null ไม่สร้างเป็นค่าจริง |
-| Transport Job | งาน, จุดรับ/ส่ง, รถ/Driver ที่มอบหมาย, สถานะ | เก็บวงจรเริ่มงาน/จบงานและเหตุขัดข้อง |
-| Route History | รถ, ช่วงเวลา, GPS points | สร้างจากตำแหน่งที่เก็บ; คำนึงถึงการกรองข้อมูลผิดปกติ |
-| Alert | ประเภท, รายละเอียด, เวลา, สถานะจัดการ, บริษัท/รถที่เกี่ยวข้อง | สร้างเฉพาะจากเงื่อนไขที่ระบบรองรับและเปิดใช้ |
-| API Client | บริษัท, credential reference, scope, status, usage history | เก็บ secret แบบปลอดภัย; แสดง secret เต็มเฉพาะตอนสร้างถ้าจำเป็น |
-| Audit Event | ผู้กระทำ, action, เวลา, ผลลัพธ์ | บันทึกการเปลี่ยนแปลงสำคัญโดยไม่ใส่ token/secret |
+| Company / Workspace | `company`: company_id, company_name, workspace_status | ข้อมูลของแต่ละบริษัทแยกด้วย company_id |
+| User | `users`: user_id, company_id, role, account_status | Platform Admin มี company_id เป็น null; ไม่มีตาราง membership แยกในเอกสาร |
+| Vehicle | `vehicles`, `vehicle_types`: vehicle_code, license_plate, vehicle_status, current_driver_id | ประเภทรถและคนขับต้องอยู่ในบริษัทเดียวกับรถ |
+| GPS Source / Device | `gps_devices`: device_code, source_type, provider_name, connection_status | รองรับแหล่ง gps_device, provider_api, driver_mobile_app ตามเอกสาร |
+| GPS Position | `gps_locations`: latitude, longitude, speed_kmh, direction_degree, accuracy_meters, recorded_at, received_at | ค่า sensor ที่ไม่มีข้อมูลเป็น null |
+| Transport Job | `transport_jobs`: job_id, vehicle_id, driver_id, job_status | เก็บเวลานัดหมาย/เริ่ม/จบและ problem_note |
+| Route History | อ่าน `gps_locations` ตาม vehicle_id และ recorded_at | ไม่เพิ่มตารางประวัติเส้นทางนอก Data Dictionary |
+| Alert / Geofence | `alerts`, `alert_rules`, `geofences` | มีโครงสร้างตารางแล้ว; API และการประมวลผลเหตุการณ์ยังไม่สร้าง |
+| API Integration | `api_integrations`, `api_request_logs` | มีโครงสร้างตารางแล้ว; การออก API Key/Rate Limit ยังไม่สร้าง |
+| Audit / Session | `system_log`, `auth_sessions` | ไม่เก็บ password/token จริงใน log; Refresh Token เก็บเป็น hash |
 
-ชื่อข้างต้นเป็นแนวคิดโดเมน ไม่ใช่ข้อกำหนดชื่อ table หรือ schema จนกว่าจะออกแบบ migration จริง
+ชื่อตารางและฟิลด์ยึด Data Dictionary ใน PDF เป็นหลัก รายการทุกคอลัมน์อยู่ใน docs/data-dictionary.json; การปรับชนิดข้อมูลสำหรับ PostgreSQL อธิบายใน docs/DATABASE.md
 
 ## 7. ขอบเขตตามบทบาท
 
@@ -148,7 +131,7 @@ GPS provider ───────┘                           │
 
 ## 8. ข้อจำกัดของ demo และข้อมูลรถ
 
-- โทรศัพท์เป็นแหล่งข้อมูล GPS สำหรับ demo เท่านั้น; ให้เก็บ `sourceType` ชัดเจนเพื่อแยกจาก GPS hardware/vendor
+- โทรศัพท์เป็นแหล่งข้อมูล GPS สำหรับ demo เท่านั้น; ให้เก็บ `source_type` ชัดเจนเพื่อแยกจาก GPS hardware/vendor
 - ความถี่และความแม่นยำขึ้นกับการอนุญาต Location, OS, แบตเตอรี่, เครือข่าย และพฤติกรรมแอป โทรศัพท์อาจหยุดส่งเมื่ออยู่เบื้องหลังหรือ offline
 - “เรียลไทม์” หมายถึงข้อมูลล่าสุดที่ได้รับตามรอบส่งและเครือข่าย ไม่รับประกันการอัปเดตต่อเนื่อง
 - การระบุความเร็วเกินกำหนดทำได้เมื่อมีข้อมูลความเร็ว/กฎที่กำหนด; การวิเคราะห์พฤติกรรมต้องมีข้อมูลและเกณฑ์ที่รองรับ

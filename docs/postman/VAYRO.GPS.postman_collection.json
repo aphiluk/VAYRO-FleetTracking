@@ -1,0 +1,290 @@
+{
+  "info": {
+    "name": "VAYRO GPS - canonical PostgreSQL contract",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Uses the PDF field names and BIGINT string IDs. Requires an existing same-company vehicle and configured device credential. Use local test data only. See docs/postman/README.md."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 Login (Company Admin)",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "noauth"
+        },
+        "url": "{{base_url}}/auth/login",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\":\"{{login_email}}\",\"password\":\"{{login_password}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Login returns 200', () => pm.response.to.have.status(200));",
+              "if (pm.response.code === 200) { const d = pm.response.json().data; pm.environment.set('access_token', d.access_token); pm.environment.set('refresh_token', d.refresh_token); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 Register GPS device",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/gps-devices",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"vehicle_id\": \"{{vehicle_id}}\",\n  \"device_code\": \"{{device_code}}\",\n  \"source_type\": \"gps_device\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('02 Register GPS device', () => pm.response.to.have.status(201));",
+              "if (pm.response.code === 201) pm.environment.set('gps_device_id', pm.response.json().data.gps_device_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 Read device",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/gps-devices/{{gps_device_id}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('03 Read device', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 Update connection settings",
+      "request": {
+        "method": "PUT",
+        "url": "{{base_url}}/gps-devices/{{gps_device_id}}",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"provider_name\": \"Postman test provider\",\n  \"connection_config\": {\n    \"endpoint\": \"https://example.test\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('04 Update connection settings', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 Device status",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/gps-devices/{{gps_device_id}}/status"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('05 Device status', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 Ingest canonical GPS point",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/gps/ingest",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"device_code\": \"{{device_code}}\",\n  \"external_record_id\": \"postman-{{$guid}}\",\n  \"recorded_at\": \"{{$isoTimestamp}}\",\n  \"latitude\": 13.7563,\n  \"longitude\": 100.5018,\n  \"speed_kmh\": 35.12,\n  \"direction_degree\": 120,\n  \"accuracy_meters\": 8\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{device_token}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('06 Ingest canonical GPS point', () => pm.response.to.have.status(201));",
+              "pm.test('Canonical GPS ID', () => pm.expect(pm.response.json().data.gps_location_id).to.be.a('string'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 Latest position",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/gps/vehicles/{{vehicle_id}}/latest"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('07 Latest position', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 Position history",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/gps/vehicles/{{vehicle_id}}/locations?limit=100"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('08 Position history', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 Legacy field name must be rejected",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/gps/ingest",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"device_code\": \"{{device_code}}\",\n  \"recorded_at\": \"{{$isoTimestamp}}\",\n  \"latitude\": 13.7563,\n  \"longitude\": 100.5018,\n  \"speed_kph\": 35\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{device_token}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('09 Legacy field name must be rejected', () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 Close connection without removing history",
+      "request": {
+        "method": "DELETE",
+        "url": "{{base_url}}/gps-devices/{{gps_device_id}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Connection disabled and history kept', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().data.connection_status).to.equal('disconnected'); });"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

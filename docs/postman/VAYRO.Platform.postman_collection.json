@@ -1,0 +1,315 @@
+{
+  "info": {
+    "name": "VAYRO Platform Admin API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Platform Admin workflow. Set platform_email, platform_password, new_user_password and company_id (an existing workspace) locally. Creates test employee accounts and edits your test profile. Do not use production data."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{platform_access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 Login",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "noauth"
+        },
+        "url": "{{base_url}}/auth/login",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\":\"{{platform_email}}\",\"password\":\"{{platform_password}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Login returns 200', () => pm.response.to.have.status(200));",
+              "if (pm.response.code === 200) { const d = pm.response.json().data; pm.environment.set('platform_access_token', d.access_token); pm.environment.set('platform_refresh_token', d.refresh_token); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 Current user",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/auth/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Authenticated with no hash exposed', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().data).not.to.have.property('password_hash'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 Own profile",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/users/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Own profile readable', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 Update own profile (changes test account name)",
+      "request": {
+        "method": "PUT",
+        "url": "{{base_url}}/users/me",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"full_name\":\"Postman Test Admin\",\"phone\":\"\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Own profile updated', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 List workspace users (Platform Admin)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/users?company_id={{company_id}}&limit=20&offset=0"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('List returns 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 Create test employee (Platform Admin)",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/users",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"full_name\": \"Postman Employee\",\n  \"email\": \"postman-{{$guid}}@example.test\",\n  \"password\": \"{{new_user_password}}\",\n  \"role\": \"dispatcher\",\n  \"company_id\": \"{{company_id}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "pm.environment.unset('platform_user_id');"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Created test user', () => pm.response.to.have.status(201));",
+              "if (pm.response.code === 201) pm.environment.set('platform_user_id', pm.response.json().data.user_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 Read test employee",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/users/{{platform_user_id}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('User readable', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "11 Update test employee",
+      "request": {
+        "method": "PUT",
+        "url": "{{base_url}}/users/{{platform_user_id}}",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"full_name\":\"Postman Employee Updated\",\"phone\":\"\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('User updated', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "12 Change test employee role",
+      "request": {
+        "method": "PATCH",
+        "url": "{{base_url}}/users/{{platform_user_id}}/role",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"role\":\"driver\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Role changed', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "13 Suspend test employee",
+      "request": {
+        "method": "PATCH",
+        "url": "{{base_url}}/users/{{platform_user_id}}/status",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"account_status\":\"suspended\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status changed', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "14 Logout current session",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "noauth"
+        },
+        "url": "{{base_url}}/auth/logout",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"refresh_token\":\"{{platform_refresh_token}}\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Logged out', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "15 Logged-out access token must fail",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/auth/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Session revoked', () => pm.response.to.have.status(401));",
+              "pm.environment.unset('platform_access_token'); pm.environment.unset('platform_refresh_token');"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

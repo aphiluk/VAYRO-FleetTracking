@@ -4,6 +4,8 @@ COPY package.json bun.lock ./
 COPY apps/web/package.json apps/web/package.json
 COPY gateway/package.json gateway/package.json
 COPY services/auth-service/package.json services/auth-service/package.json
+COPY services/user-service/package.json services/user-service/package.json
+COPY services/tracking-service/package.json services/tracking-service/package.json
 COPY packages/shared-types/package.json packages/shared-types/package.json
 RUN bun install --frozen-lockfile
 
