@@ -51,6 +51,7 @@ export interface RefreshRequest {
 
 export interface RegisterCompanyRequest {
   company_name: string;
+  /** Data Dictionary: company.contact_name VARCHAR(100). */
   contact_name?: string;
   contact_email: string;
   contact_phone?: string;

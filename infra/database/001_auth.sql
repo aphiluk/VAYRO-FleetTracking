@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS company (
   company_name     VARCHAR(150) NOT NULL,
   workspace_status VARCHAR(20)  NOT NULL DEFAULT 'pending'
                    CHECK (workspace_status IN ('pending', 'active', 'suspended', 'rejected')),
-  contact_name     VARCHAR(150),
+  contact_name     VARCHAR(100),
   contact_email    VARCHAR(150) UNIQUE,
   contact_phone    VARCHAR(30),
   created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -46,12 +46,12 @@ CREATE INDEX IF NOT EXISTS auth_sessions_user_idx ON auth_sessions (user_id, exp
 
 -- Audit trail. Never store passwords, tokens or secrets in old_value/new_value.
 CREATE TABLE IF NOT EXISTS system_log (
-  log_id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  company_id  BIGINT,
-  user_id     BIGINT,
-  action      VARCHAR(60) NOT NULL,
-  entity_type VARCHAR(40),
-  entity_id   VARCHAR(120),
+  system_log_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  company_id  BIGINT REFERENCES company (company_id),
+  user_id     BIGINT REFERENCES users (user_id),
+  action      VARCHAR(120) NOT NULL,
+  entity_type VARCHAR(80),
+  entity_id   VARCHAR(80),
   old_value   JSONB,
   new_value   JSONB,
   result      VARCHAR(10) NOT NULL DEFAULT 'success' CHECK (result IN ('success', 'failure')),

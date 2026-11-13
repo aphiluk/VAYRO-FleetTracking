@@ -76,11 +76,11 @@ export const authRoutes = new Elysia({ prefix: "/api/v1/auth" })
         const [session] = await tx`
           SELECT session_id, revoked_at, expires_at > now() AS valid
           FROM auth_sessions WHERE refresh_token_hash = ${hash}`;
+        if (!session.valid) return null;
         if (session.revoked_at || !canUseSystem(owner)) {
           await tx`UPDATE auth_sessions SET revoked_at = now() WHERE user_id = ${owner.user_id} AND revoked_at IS NULL`;
           return { reused: !!session.revoked_at, userId: owner.user_id };
         }
-        if (!session.valid) return null;
         await tx`UPDATE auth_sessions SET revoked_at = now(), last_used_at = now() WHERE session_id = ${session.session_id}`;
         return { tokens: await issueSession(owner, ip, userAgent, tx) };
       });
