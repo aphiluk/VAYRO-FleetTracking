@@ -29,7 +29,7 @@ export const companyRoutes = new Elysia({ prefix: "/api/v1/companies" }).use(htt
   {
     body: t.Object({
       company_name: t.String({ minLength: 1, maxLength: 150 }),
-      contact_name: t.Optional(t.String({ maxLength: 150 })),
+      contact_name: t.Optional(t.String({ maxLength: 100 })),
       contact_email: t.String({ minLength: 3, maxLength: 150, format: "email" }),
       contact_phone: t.Optional(t.String({ maxLength: 30 })),
       admin_full_name: t.String({ minLength: 1, maxLength: 150 }),

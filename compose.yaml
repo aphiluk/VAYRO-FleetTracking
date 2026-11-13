@@ -32,7 +32,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?copy .env.example to .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # SQL files run only when pgdata is first created; `docker compose down -v` to re-apply
+      # Init SQL runs on a new volume only. For existing data, apply numbered migrations; never reset the volume.
       - ./infra/database:/docker-entrypoint-initdb.d:ro
     init: true
     restart: unless-stopped

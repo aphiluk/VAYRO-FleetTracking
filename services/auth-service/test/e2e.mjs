@@ -26,14 +26,21 @@ function check(name, cond, extra) {
 const psql = (q) => execSync(`docker compose exec -T postgres psql -U vayro -d vayro -tAc "${q}"`, { encoding: "utf8", cwd: REPO_ROOT }).trim();
 
 // register
+const schemaRows = psql("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('company','users','auth_sessions','system_log')");
+check("Auth/User uses four documented tables", schemaRows === "4", schemaRows);
+check("dictionary audit primary key", psql("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='system_log' AND column_name='system_log_id'") === "1");
+check("dictionary audit foreign keys", psql("SELECT count(*) FROM pg_constraint WHERE conrelid='public.system_log'::regclass AND contype='f'") === "2");
 const adminEmail = `admin${sfx}@a.test`;
-let r = await call("POST", "/companies/register", { body: { company_name: "Co A", contact_email: `c${sfx}@a.test`, admin_full_name: "Admin A", admin_email: adminEmail, admin_password: PW } });
+let r = await call("POST", "/companies/register", { body: { company_name: "Co A", contact_name: "x".repeat(100), contact_email: `c${sfx}@a.test`, admin_full_name: "Admin A", admin_email: adminEmail, admin_password: PW } });
 check("register 200", r.status === 200 && r.json?.data?.workspace_status === "pending", r);
 const coA = r.json?.data?.company_id;
+check("dictionary contact_name 100 stored intact", psql(`SELECT char_length(contact_name) FROM company WHERE company_id=${coA}`) === "100");
 r = await call("POST", "/companies/register", { body: { company_name: "Co A", contact_email: `c${sfx}@a.test`, admin_full_name: "x", admin_email: `o${sfx}@a.test`, admin_password: PW } });
 check("register dup contact_email 409", r.status === 409, r);
 r = await call("POST", "/companies/register", { body: { company_name: "", contact_email: "bad", admin_full_name: "x", admin_email: "y", admin_password: "short" } });
 check("register invalid 422", r.status === 422, r);
+r = await call("POST", "/companies/register", { body: { company_name: "Long contact", contact_name: "x".repeat(101), contact_email: `long${sfx}@a.test`, admin_full_name: "Admin", admin_email: `long${sfx}@a.test`, admin_password: PW } });
+check("dictionary contact_name 101 rejected", r.status === 422, r.status);
 
 // login blocked while pending
 r = await call("POST", "/auth/login", { body: { email: adminEmail, password: PW } });
@@ -69,6 +76,21 @@ check("reuse detection killed new session too 401", r.status === 401, r);
 r = await call("POST", "/auth/login", { body: { email: adminEmail, password: PW } });
 const t3 = r.json.data;
 const adminTok = t3.access_token;
+
+// Expired tokens have no authority to revoke a different, current session.
+const expiredLogin = await call("POST", "/auth/login", { body: { email: adminEmail, password: PW } });
+const expiredSessionId = JSON.parse(Buffer.from(expiredLogin.json.data.access_token.split(".")[1], "base64url")).sid;
+if (!/^[0-9]+$/.test(expiredSessionId)) throw new Error("Invalid fixture session id");
+psql(`UPDATE auth_sessions SET expires_at=now()-interval '1 day' WHERE session_id=${expiredSessionId}`);
+r = await call("POST", "/auth/refresh", { body: { refresh_token: expiredLogin.json.data.refresh_token } });
+check("expired unused refresh is rejected", r.status === 401, r.status);
+r = await call("GET", "/auth/me", { token: adminTok });
+check("expired unused refresh leaves current session active", r.status === 200, r.status);
+psql(`UPDATE auth_sessions SET revoked_at=now() WHERE session_id=${expiredSessionId}`);
+r = await call("POST", "/auth/refresh", { body: { refresh_token: expiredLogin.json.data.refresh_token } });
+check("expired revoked refresh is rejected", r.status === 401, r.status);
+r = await call("GET", "/auth/me", { token: adminTok });
+check("expired revoked refresh leaves current session active", r.status === 200, r.status);
 
 // user mgmt
 const dEmail = `disp${sfx}@a.test`;

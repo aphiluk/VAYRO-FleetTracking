@@ -11,7 +11,7 @@ User endpoints now run separately in `services/user-service`, reached through th
 | `company` | `company_id`, `workspace_status` | Company accounts require an active workspace. Pending, suspended and rejected are denied. |
 | `auth_sessions` | `session_id`, `user_id`, `refresh_token_hash`, `expires_at`, `revoked_at`, `last_used_at`, `ip_address`, `user_agent`, `created_at` | Refresh secret stored as SHA-256 only; FK to users; unique hash; index `(user_id, expires_at)`. |
 
-PostgreSQL uses identity BIGINT instead of AUTO_INCREMENT, TIMESTAMPTZ instead of DATETIME, and CHECK constraints instead of MySQL ENUM. Auth field names and allowed values follow the dictionary. IDs are JSON strings to preserve BIGINT precision. No new authentication tables or database reset are needed. `system_log` records audit events without credentials.
+PostgreSQL uses identity BIGINT instead of AUTO_INCREMENT, TIMESTAMPTZ instead of DATETIME, and CHECK constraints instead of MySQL ENUM. IDs are JSON strings to preserve BIGINT precision. `system_log` records audit events without credentials. See [database scope, implementation decisions and safe migration](DATABASE.md): the PDF has 14 tables; Auth/User implements four. Existing databases should apply `002_align_auth_dictionary.sql` to fix earlier contact/audit dictionary mismatches without resetting data.
 
 ## Verification
 
@@ -20,9 +20,10 @@ docker compose up --build -d --wait postgres auth-service user-service gateway
 docker compose exec -T auth-service bun test test/security.test.ts
 node services/auth-service/test/e2e.mjs
 node services/user-service/test/e2e.mjs
+node services/auth-service/test/migration.mjs
 ```
 
-Verified on Docker (Bun 1.3.14 + PostgreSQL 17): 5 unit tests, 58 Authentication E2E checks and 54 User E2E checks. Covers all roles, workspace/account status, session expiry/revocation, parallel refresh, authorization, tenant isolation and transactional audit rollback. Tests create and retain accounts; use a local development database only. Set `GATEWAY_URL`, `AUTH_URL`, `USER_URL` if host ports differ. See [User Service contracts and operator bootstrap](USER.md).
+Verified on Docker (Bun 1.3.14 + PostgreSQL 17): 5 unit tests, 67 Authentication E2E checks and 54 User E2E checks. Covers all roles, workspace/account status, session expiry/revocation, parallel refresh, authorization, tenant isolation and transactional audit rollback. Tests create and retain accounts; use a local development database only. Set `GATEWAY_URL`, `AUTH_URL`, `USER_URL` if host ports differ. See [User Service contracts and operator bootstrap](USER.md).
 
 ## Endpoints
 
@@ -48,7 +49,7 @@ Send `Authorization: Bearer <access_token>`. Responses use `{success, data, mess
 - Company Admin queries are filtered by the caller's company_id from the database. Platform Admin explicitly has platform-wide access. User changes and audit entries commit atomically.
 - The guard re-reads the user on every request, so suspending a user or workspace applies immediately.
 - Access token: HS256 JWT, 15 min (`ACCESS_TOKEN_TTL_SECONDS`), with `sub`, `sid` (dictionary `session_id`), `role`, `cid`, `iat`, `exp`. Every protected call checks the session plus the current role/status and workspace in PostgreSQL. Tokens without `sid` require a new login after upgrade.
-- Refresh token: 256-bit random, stored as SHA-256, 7 days (`REFRESH_TOKEN_TTL_SECONDS`). Rotation consumes the old session and inserts the new one in a transaction, also invalidating the old access token. A user row lock serializes rotations so simultaneous replay revokes the winning replacement. Re-using a revoked token revokes all of that user's sessions, including other devices; never automatically retry refresh. TTL values must be integers between 1 and 31536000 seconds.
+- Refresh token: 256-bit random, stored as SHA-256, 7 days (`REFRESH_TOKEN_TTL_SECONDS`). Rotation consumes the old session and inserts the new one in a transaction, also invalidating the old access token. A user row lock serializes rotations so simultaneous replay revokes the winning replacement. Re-using a revoked token that has not expired revokes all of that user's sessions, including other devices; never automatically retry refresh. Expired refresh tokens always return 401 without revoking other sessions. TTL values must be integers between 1 and 31536000 seconds.
 - Passwords: argon2id via `Bun.password`, 10-128 characters on create/register.
 - Audit rows go to `system_log`: login success/failure, logout, register, user create/update/role/status. No passwords or tokens.
 
@@ -73,3 +74,5 @@ Pages: `/login`, `/register`, `/dashboard` (any signed-in user), `/users` (Compa
 - Platform Admin pages are not built. Registered companies stay `pending` until SQL (or a future Platform Admin screen) activates them.
 - No page for the user's own profile edit (`PUT /users/me` exists in the API).
 - The e2e test needs the Docker stack and leaves its test companies/users in the database; it is not a unit test suite.
+
+Migration verification: 13 checks passed for rollback, preservation, exact dictionary fields and repeatability; see DATABASE.md.
