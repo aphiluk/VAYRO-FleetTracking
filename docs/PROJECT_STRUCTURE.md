@@ -1,5 +1,7 @@
 # VAYRO Fleet Tracking: Project and System Structure
 
+Backend branch note: web prototype details in this local inventory are reference only. Frontend prototype changes are excluded from the Backend commit; the committed web is the original scaffold.
+
 เอกสารนี้อธิบายทั้งโครงสร้างที่มีอยู่จริงใน repository และโครงสร้างเป้าหมายสำหรับพัฒนาต่อ แยกสองส่วนนี้ไว้ชัดเจนเพื่อไม่ให้เข้าใจว่าโฟลเดอร์หรือฟีเจอร์ที่ยังไม่ได้สร้างมีอยู่แล้ว
 
 ## 1. ภาพรวมโครงการ
@@ -32,18 +34,20 @@
 .
 ├── apps/
 │   └── web/                         # มี: Next.js app scaffold
-│       ├── app/                     # มี: page.tsx, layout.tsx, globals.css
+│       ├── app/                     # มี: login, register, dashboard, users, session/refresh, actions.ts
+│       ├── lib/, components/        # มี: session/api helper (server-only), UI พื้นฐาน
 │       ├── public/                  # มี: assets เริ่มต้นของ Next.js
 │       ├── AGENTS.md                # มี: กฎเฉพาะ Next.js (ให้คง generated block ไว้)
 │       ├── next.config.ts
 │       └── package.json
 ├── gateway/
-│   ├── src/index.ts                 # มี: Elysia hello-world scaffold
+│   ├── src/index.ts                 # Gateway routes auth to auth-service, users to user-service
 │   ├── package.json
 │   └── README.md
 ├── services/
-│   └── auth-service/                # มี: Elysia hello-world scaffold
-│       ├── src/index.ts
+│   ├── user-service/                # User API: separate process, host port 3003
+│   └── auth-service/                # Authentication and existing company registration module
+│       ├── src/                     # index, config, db, security, http, guard, audit, routes/*
 │       ├── package.json
 │       └── README.md
 ├── packages/
@@ -51,10 +55,12 @@
 │       ├── index.ts
 │       └── package.json
 ├── AGENTS.md                        # คู่มือสำหรับ Codex ที่ root
+├── infra/database/001_auth.sql      # มี: ตาราง company, users, auth_sessions, system_log
 ├── docs/PROJECT_STRUCTURE.md        # เอกสารโครงสร้างนี้
+├── docs/AUTH.md                     # มี: สัญญา API และกฎของ auth
 ├── package.json                     # Bun workspaces และสคริปต์ dev บางส่วน
 ├── Dockerfile                       # มี: build targets สำหรับ web และ APIs
-├── compose.yaml                     # มี: web, gateway, auth-service และ health checks
+├── compose.yaml                     # มี: web, gateway, auth-service, user-service และ health checks
 ├── .dockerignore                    # กัน dependencies, build output และ secrets ออกจาก image
 ├── .env.example                     # ตัวอย่างพอร์ตสำหรับ local Docker
 └── bun.lock
@@ -63,9 +69,9 @@
 ### สถานะจริงที่ควรรู้
 
 - Root ใช้ Bun workspaces ครอบ `apps/*`, `gateway`, `services/*`, `packages/*`.
-- หน้าเว็บ, gateway, auth-service และ shared-types ยังเป็น scaffold; business logic ของระบบติดตามยังไม่ได้เริ่มในไฟล์เหล่านี้
-- มี Dockerfile และ Compose สำหรับรัน web, gateway และ auth-service พร้อม health checks; ดูวิธีรันใน root README.md
-- ยังไม่พบ `vehicle-service`, `tracking-service`, `notification-service`, แอป Android/APK, การเชื่อม PostgreSQL/PostgREST หรือ Three.js
+- หน้าเว็บมี login/สมัครบริษัท/แดชบอร์ดบัญชี/จัดการผู้ใช้ (ยังไม่มีหน้า tracking); auth-service และ gateway มีระบบ auth ฝั่งบริษัทแล้ว (ทดสอบ flow ผ่าน Docker แล้ว ดู docs/AUTH.md); business logic ของระบบติดตามยังไม่ได้เริ่ม
+- มี Dockerfile และ Compose สำหรับรัน web, gateway, auth-service และ user-service พร้อม health checks; ดูวิธีรันใน root README.md
+- มี PostgreSQL ใน Compose (auth-service ต่อผ่าน `Bun.sql` ตรง); ยังไม่พบ `vehicle-service`, `tracking-service`, `notification-service`, แอป Android/APK, PostgREST หรือ Three.js
 - สคริปต์ root มี `dev:vehicle`, `dev:tracking`, `dev:notification` ซึ่งชี้ไปยัง service folders ที่ยังไม่มี ควรสร้าง service ที่เกี่ยวข้องก่อนใช้สคริปต์นั้น
 - มี `AGENTS.md` ใน `apps/web`; ให้ปฏิบัติตามกฎนั้นควบคู่กับ root `AGENTS.md` เมื่อแก้หน้าเว็บ โดยเฉพาะข้อให้อ่านเอกสาร Next.js ที่ติดตั้งอยู่ก่อนเปลี่ยน API
 

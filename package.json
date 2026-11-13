@@ -6,6 +6,7 @@
     "dev:web": "bun --cwd apps/web dev",
     "dev:gateway": "bun --cwd gateway dev",
     "dev:auth": "bun --cwd services/auth-service dev",
+    "dev:user": "bun --cwd services/user-service dev",
     "dev:vehicle": "bun --cwd services/vehicle-service dev",
     "dev:tracking": "bun --cwd services/tracking-service dev",
     "dev:notification": "bun --cwd services/notification-service dev"
