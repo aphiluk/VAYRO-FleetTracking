@@ -3,9 +3,10 @@ import { Elysia } from "elysia";
 
 const AUTH_URL = process.env.AUTH_SERVICE_URL ?? "http://127.0.0.1:3002";
 const USER_URL = process.env.USER_SERVICE_URL ?? "http://127.0.0.1:3003";
+const TRACKING_URL = process.env.TRACKING_SERVICE_URL ?? "http://127.0.0.1:3004";
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://localhost:3000";
 
-// Only these paths reach auth-service; everything else stays unreachable through the gateway.
+// Keep proxy destinations on an explicit allowlist.
 const AUTH_PATHS = ["/api/v1/auth", "/api/v1/companies/register"];
 
 const app = new Elysia()
@@ -16,7 +17,8 @@ const app = new Elysia()
     async ({ request, server, set }) => {
       const url = new URL(request.url);
       const isUserPath = url.pathname === "/api/v1/users" || url.pathname.startsWith("/api/v1/users/");
-      if (!isUserPath && !AUTH_PATHS.some((p) => url.pathname === p || url.pathname.startsWith(`${p}/`))) {
+      const isTrackingPath = ["/api/v1/gps-devices", "/api/v1/gps"].some(p => url.pathname === p || url.pathname.startsWith(`${p}/`));
+      if (!isUserPath && !isTrackingPath && !AUTH_PATHS.some((p) => url.pathname === p || url.pathname.startsWith(`${p}/`))) {
         set.status = 404;
         return { success: false, error: { code: "NOT_FOUND", message: "Not found" } };
       }
@@ -32,7 +34,7 @@ const app = new Elysia()
       if (ip) headers.set("x-forwarded-for", ip);
 
       try {
-        const upstream = await fetch(`${isUserPath ? USER_URL : AUTH_URL}${url.pathname}${url.search}`, {
+        const upstream = await fetch(`${isTrackingPath ? TRACKING_URL : isUserPath ? USER_URL : AUTH_URL}${url.pathname}${url.search}`, {
           method: request.method,
           headers,
           body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer(),

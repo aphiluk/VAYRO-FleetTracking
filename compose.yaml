@@ -51,6 +51,7 @@ services:
     environment:
       AUTH_SERVICE_URL: http://auth-service:3000
       USER_SERVICE_URL: http://user-service:3000
+      TRACKING_SERVICE_URL: http://tracking-service:3000
       WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-3001}:3000"
@@ -90,6 +91,25 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:${USER_PORT:-3003}:3000"
+    init: true
+    restart: unless-stopped
+    healthcheck: *healthcheck
+
+  tracking-service:
+    build:
+      context: .
+      target: api
+      args:
+        SERVICE: services/tracking-service
+    environment:
+      DATABASE_URL: postgres://vayro:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/vayro
+      JWT_SECRET: ${JWT_SECRET:?copy .env.example to .env}
+      TRACKING_API_TOKENS: "${TRACKING_API_TOKENS:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${TRACKING_PORT:-3004}:3000"
     init: true
     restart: unless-stopped
     healthcheck: *healthcheck

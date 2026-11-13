@@ -23,6 +23,9 @@ docker compose up --build -d --wait
 | Gateway | http://localhost:3001 |
 | Authentication service | http://localhost:3002 |
 | User service | http://localhost:3003 |
+| Tracking service (GPS demo) | http://localhost:3004 |
+
+Auth/User and the incoming GPS demo are combined on the integration branch. See [integration status and remaining GPS limitations](docs/INTEGRATION.md) before merging. The GPS demo still keeps devices/positions in memory.
 
 แต่ละ container ใช้พอร์ต 3000 ภายในและ bind host port เฉพาะ localhost
 Compose มี PostgreSQL (ไม่เปิดพอร์ตออกเครื่อง) ที่สร้างตารางจาก `infra/database/*.sql` ตอนสร้าง volume ครั้งแรก

@@ -28,9 +28,8 @@ export async function findUserById(id: string): Promise<Me | undefined> {
 // Requires a valid bearer token, then re-reads the user so role/status changes apply immediately
 // (suspending a user or workspace takes effect without waiting for the access token to expire).
 // Provides `me`. Pass roles to restrict access.
-export const authed = (...roles: Role[]) =>
-  new Elysia().resolve({ as: "scoped" }, async ({ headers }) => {
-    const token = headers.authorization?.match(/^Bearer (.+)$/i)?.[1];
+export async function authenticate(authorization?: string): Promise<Me> {
+    const token = authorization?.match(/^Bearer (.+)$/i)?.[1];
     const claims = token ? verifyAccessToken(token) : null;
     if (!claims || !/^\d+$/.test(claims.sub)) throw new ApiError(401, "UNAUTHORIZED", "Missing or invalid access token");
 
@@ -42,6 +41,12 @@ export const authed = (...roles: Role[]) =>
       WHERE session_id = ${claims.sid} AND user_id = ${me.user_id}
         AND revoked_at IS NULL AND expires_at > now()`;
     if (!session) throw new ApiError(401, "UNAUTHORIZED", "Session expired or revoked");
+    return me;
+}
+
+export const authed = (...roles: Role[]) =>
+  new Elysia().resolve({ as: "scoped" }, async ({ headers }) => {
+    const me = await authenticate(headers.authorization);
     if (roles.length && !roles.includes(me.role)) throw new ApiError(403, "FORBIDDEN", "Insufficient role");
     return { me };
   });
