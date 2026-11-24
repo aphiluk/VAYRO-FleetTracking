@@ -6,7 +6,7 @@ Live view of vehicle positions: latest position, GPS status and freshness per ve
 | --- | --- |
 | Database | none (stateless) |
 | Owns tables | - |
-| Gateway prefix | see `gateway/src/index.ts` |
+| Gateway prefix | Reserved for a future Fleet Tracking API |
 
 ## Public endpoints (from the project PDF, pages 18-26)
 

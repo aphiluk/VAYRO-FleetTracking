@@ -10,7 +10,7 @@
 #
 # Order (from the repo root):
 #   1. docker compose exec -T postgres sh /docker-entrypoint-initdb.d/01-create-databases.sh
-#   2. docker compose up -d --build   (each service applies its Prisma migration and creates its tables)
+#   2. docker compose up -d --build --wait
 #   3. docker compose exec -T postgres sh < infra/database/split-legacy.sh
 set -eu
 U="${POSTGRES_USER:-vayro}"

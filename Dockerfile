@@ -15,6 +15,7 @@ COPY services/transport-service/package.json services/transport-service/package.
 COPY services/alert-service/package.json services/alert-service/package.json
 COPY services/reporting-service/package.json services/reporting-service/package.json
 COPY services/integration-service/package.json services/integration-service/package.json
+COPY services/navigation-service/package.json services/navigation-service/package.json
 COPY packages/shared-types/package.json packages/shared-types/package.json
 COPY packages/service-kit/package.json packages/service-kit/package.json
 RUN bun install --frozen-lockfile

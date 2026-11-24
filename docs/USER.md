@@ -7,14 +7,14 @@ Implements the eight User Service endpoints in PDF pages 19-20, with `users`, `c
 From the repository root, with `.env` configured:
 
 ```sh
-docker compose up --build -d --wait
+docker compose -f compose.yaml -f compose.debug.yaml up --build -d --wait
 node services/auth-service/test/e2e.mjs
 node services/user-service/test/e2e.mjs
 ```
 
 Tests create and retain local test accounts. User tests also create a narrowly scoped audit-failure trigger and remove it in a finally block. Do not run against production. Verified: 67 Authentication E2E checks, 54 User E2E checks, 5 Authentication unit tests, strict TypeScript checks.
 
-Clients call `http://localhost:3001/api/v1` with `Authorization: Bearer <access_token>`. Login first using the four [Authentication endpoints](AUTH.md). Docker also exposes the local User Service at port 3003. [Postman collections](postman/README.md) cover Company Admin and Platform Admin separately.
+Clients call `http://localhost:3001/api/v1` with `Authorization: Bearer <access_token>`. Login first using the four [Authentication endpoints](AUTH.md). The debug Compose override exposes the User service at localhost port 3003 for direct-service checks. [Postman collections](postman/README.md) cover Company Admin and Platform Admin separately.
 
 ## Permissions and contract
 

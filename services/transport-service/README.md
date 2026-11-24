@@ -6,50 +6,47 @@ Transport jobs: create, assign vehicle and driver, start, complete, report a pro
 | --- | --- |
 | Database | `transport_db` (role `transport_svc`), Prisma schema in `prisma/schema.prisma` |
 | Owns tables | `transport_jobs`, `system_log` |
-| Gateway prefix | see `gateway/src/index.ts` |
+| Gateway prefix | `/api/v1/jobs`, `/api/v1/driver` |
 
 ## Public endpoints (from the project PDF, pages 18-26)
 
-| Method | Path | Who | What |
-| --- | --- | --- | --- |
-| [x] GET | `/api/v1/jobs` | Company Admin, Dispatcher | List with filters `status`, `vehicle_id`, `driver_id`, `search` (job_code / job_name), `scheduled_from`, `scheduled_to`, `limit`, `offset` |
-| [x] GET | `/api/v1/jobs/:id` | Company Admin, Dispatcher, Driver (own job only) | One job |
-| [x] POST | `/api/v1/jobs` | Company Admin, Dispatcher | Create. `vehicle_id` and `driver_id` may be given together to create it already `assigned` |
-| [x] PUT | `/api/v1/jobs/:id` | Company Admin, Dispatcher | Edit details, addresses, coordinates, schedule (not `job_code`, vehicle or driver) |
-| [x] PATCH | `/api/v1/jobs/:id/assign` | Company Admin, Dispatcher | Body `{vehicle_id, driver_id}` |
-| [x] PATCH | `/api/v1/jobs/:id/start` | Company Admin, Dispatcher, Driver (own job) | Sets `in_progress` and `actual_start_at` |
-| [x] PATCH | `/api/v1/jobs/:id/complete` | Company Admin, Dispatcher, Driver (own job) | Sets `completed` and `actual_end_at` |
-| [x] PATCH | `/api/v1/jobs/:id/problem` | Company Admin, Dispatcher, Driver (own job) | Body `{problem_note}` |
-| [x] PATCH | `/api/v1/jobs/:id/cancel` | Company Admin, Dispatcher | Optional body `{reason}` |
-| [x] GET | `/api/v1/driver/jobs` | Driver | The signed-in driver's own jobs (`status`, `limit`, `offset`) |
+- [x] `GET /api/v1/jobs`
+- [x] `GET /api/v1/jobs/:id`
+- [x] `POST /api/v1/jobs`
+- [x] `PUT /api/v1/jobs/:id`
+- [x] `PATCH /api/v1/jobs/:id/assign`
+- [x] `PATCH /api/v1/jobs/:id/accept`
+- [x] `PATCH /api/v1/jobs/:id/start`
+- [x] `PATCH /api/v1/jobs/:id/complete`
+- [x] `PATCH /api/v1/jobs/:id/problem`
+- [x] `PATCH /api/v1/jobs/:id/cancel`
+- [x] `GET /api/v1/driver/jobs`
 
-`company_id` and `created_by` always come from the signed-in user; bodies that contain unknown fields are refused (422).
+Every endpoint must check Authentication, Role and `company_id` from the signed-in user, never from the request body (PDF page 18).
 
-## Rules
+Company Admin and Dispatcher manage jobs in their company; Platform Admin may filter by company and must select one on creation. Driver reads their own job detail/list and performs accept/start/complete/problem actions. Managers cannot perform these actions on a driver's behalf.
 
-- Status flow: `pending -> assigned -> in_progress -> completed`; `problem` and `cancelled` can happen while the job is open. `completed` and `cancelled` are final. See `src/modules/jobs/jobs.rules.ts`.
-  - `assign`: from `pending`, `assigned`, `problem`. `start`: from `assigned` or `problem` (resumes). `complete` and `problem`: from `in_progress`. `cancel`: from any open status. `edit`: any open status.
-- The vehicle must exist in the caller's company and be `active`; the driver must be an `active` user with role `driver` in the same company (checked through vehicle-service and user-service).
-- A driver and a vehicle can each have only one `in_progress` job. Starting is serialized per driver and per vehicle with advisory locks, so two requests cannot both win (409 `DRIVER_BUSY` / `VEHICLE_BUSY`).
-- `assign`, `create` (when assigned) and `start` answer with `warnings: ["vehicle_current_driver_differs"]` when the vehicle's `current_driver_id` is not the job's driver. gps-data-service accepts a driver's phone positions only for the vehicle whose `current_driver_id` is that driver, so the app would be refused until vehicle-service is updated.
-- Every create / update / assign / start / complete / problem / cancel writes one `system_log` row in the same transaction.
-- Alerts (best effort, never block the request): assigning raises a `job_assignment` alert for the driver; a reported problem raises a `system_anomaly` alert (`event_data.reason = "job_problem"`); when a running job ends, alert-service is told to pause its "GPS offline" check for that vehicle. Needs `ALERT_SERVICE_URL`; without it jobs work as before.
+Creation requires `job_code`, `pickup_address`, `delivery_address`; optional fields are described by `CreateTransportJobRequest` in shared-types. Supplying both vehicle and driver makes a job `assigned`, otherwise `pending`. Assign accepts both nullable ids; it never changes the vehicle's permanent driver. Only pending/assigned jobs can be edited. Reads return `TransportJobRecord` with vehicle/driver display metadata. Lists are arrays, default 50/max 100 rows, with `limit`, `offset`, `q`, `job_status` and company filtering. IDs are strings and dates are UTC ISO strings.
+
+Lifecycle: `assigned → accepted → in_progress → completed`; accepted/in-progress jobs can report a problem and resume with start. Cancel is allowed for managers from any nonterminal state. Exact retries of accept/start/complete/cancel and identical problem reports are idempotent and preserve timestamps. Accepted, in-progress and problem jobs reserve both driver and vehicle; concurrent accepts use transaction advisory locks. Jobs may queue in assigned state. Vehicle and Driver must be active and belong to the same company on creation/assignment and accept/start. Directory service lookups do not create cross-service database transactions.
+
+GPS is not part of these actions. Optional cargo is plain text (max 2000 characters); route snapshots are bounded Valhalla/auto road previews with at most 25,000 coordinates and 2,000 steps. Coordinate pairs must both be set or both null; scheduled dates require a timezone and end must follow start. Stored snapshots are previews, not GPS history. Audit rows are atomic with state changes and omit route geometry, addresses and free text.
+
+Transport requires `DATABASE_URL`, `INTERNAL_API_TOKEN`, `AUTH_SERVICE_URL`, `USER_SERVICE_URL`, `VEHICLE_SERVICE_URL`, `COMPANY_SERVICE_URL`. Run migrations and generate the client before starting. `bun test` uses the service's PostgreSQL database with unique test company ids and fake auth/directory adapters; test fixtures are retained.
+
+When `ALERT_SERVICE_URL` is set, Transport sends assignment and problem alerts after the database commits. It also pauses the offline check when a running job stops. Alert delivery failure does not roll back the job.
 
 ## Internal API other services call (not routed by the gateway, needs `x-internal-token`)
 
-- `GET /internal/jobs/in-progress?company_id=&vehicle_id=&driver_id=` returns `{exists}` (gps-data-service)
-- `GET /internal/jobs/driver-windows?company_id=&driver_id=&vehicle_id=&from=&to=` returns `[{job_id, started_at, ended_at|null}]`, newest first, at most 50 (route-history-service shows a driver only these stretches)
-- `GET /internal/system-logs` this service's audit rows (integration-service)
-- `GET /internal/stats/jobs?company_id=&from=&to=` jobs created in the window by status plus average duration of completed ones (for reporting-service)
-- `GET /internal/jobs?company_id=&from=&to=&status=&limit=&offset=` one page of a company's jobs (for reporting-service)
+- `GET /internal/jobs/in-progress?company_id=&vehicle_id=&driver_id=` returns `{exists}`
+- `GET /internal/stats/jobs` and `GET /internal/jobs` provide Reporting counts and job rows.
+- `GET /internal/jobs/driver-windows` provides job windows for Route History.
+- `GET /internal/system-logs` provides Transport audit rows for Integration.
 
-## Data it needs from other services (over `/internal/*`, never their database)
+## Data it needs from other services (ask them over `/internal/*`, never their database)
 
-- vehicle-service (`/internal/vehicles/:id`), user-service (`/internal/users/:id`), auth-service (caller identity), alert-service (optional)
-
-## Tests
-
-`bun test` runs `test/jobs.rules.test.ts` (state machine, input rules, lock order). The HTTP and database paths are exercised through Postman (see `docs/postman/`).
+- vehicle-service, user-service (vehicle and driver are in the same company)
+- auth-service (caller identity)
 
 ## Data layer
 
@@ -59,4 +56,10 @@ Transport jobs: create, assign vehicle and driver, start, complete, report a pro
 
 ## Code layout
 
-`src/app.ts` builds the app, `src/config/env.ts` reads env, `src/plugins/guard.ts` gives `authed(...roles)`, `src/lib/prisma.ts` is the database client, `src/adapters/` talks to other services, `src/modules/jobs/` holds model, repository, rules (pure), service and routes.
+`src/app.ts` builds the app, `src/config/env.ts` reads env, `src/plugins/guard.ts` gives `authed(...roles)` for protected routes. `src/lib/prisma.ts` is the database client.
+Keep routes thin; put rules in a service / use-case file and every database call in a repository file (see `docs/PROJECT_STRUCTURE.md`).
+
+
+## Internal dashboard counts
+
+`GET /internal/dashboard/summary?company_id=` requires an internal service token and an explicit valid company id. It returns only company-scoped aggregate counts for Reporting, without pagination or individual personal/GPS records. Database queries live in `src/modules/dashboard/dashboard.repository.ts`. Run `bun test test/dashboard.test.ts` against this service's local database to verify counts beyond 100 records, company isolation, zero counts and the internal guard. Fixtures use unique test-company ids and are retained.

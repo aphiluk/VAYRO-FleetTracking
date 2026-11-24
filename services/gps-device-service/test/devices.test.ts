@@ -166,6 +166,35 @@ describe("internal API for gps-data-service", () => {
     expect((await call("PUT", `/api/v1/gps-devices/${deviceId}`, "admin-a", { connection_config: { disabled: false } })).status).toBe(200);
     expect((await call("GET", `/internal/devices/by-code?company_id=${companyA}&device_code=gps-demo`, undefined, undefined, internal)).json.data.disabled).toBe(false);
   });
+
+  test("only the owning admin can toggle ingestion without replacing other device settings", async () => {
+    const created = await call("POST", "/api/v1/gps-devices", "admin-a", {
+      vehicle_id: vehicleA, device_code: "phone-status-test", source_type: "driver_mobile_app",
+      connection_config: { interval_seconds: 15 },
+    });
+    expect(created.status).toBe(201);
+    const id = created.json.data.gps_device_id;
+    const path = `/api/v1/gps-devices/${id}/status`;
+    const receivedAt = new Date().toISOString();
+    await call("POST", `/internal/devices/${id}/received`, undefined, { received_at: receivedAt }, internal);
+    expect((await call("PATCH", path, "dispatcher", { enabled: false })).status).toBe(403);
+    expect((await call("PATCH", path, "admin-b", { enabled: false })).status).toBe(404);
+    expect((await call("PATCH", path, "admin-a", { enabled: "false" })).status).toBe(422);
+
+    const disabled = await call("PATCH", path, "admin-a", { enabled: false });
+    expect(disabled.status).toBe(200);
+    expect(disabled.json.data).toMatchObject({
+      connection_config: { disabled: true, interval_seconds: 15 },
+      connection_status: "disconnected", last_received_at: receivedAt,
+    });
+    const duplicate = await call("PATCH", path, "admin-a", { enabled: false });
+    expect(duplicate.json.data.updated_at).toBe(disabled.json.data.updated_at);
+    const enabled = await call("PATCH", path, "admin-a", { enabled: true });
+    expect(enabled.status).toBe(200);
+    expect(enabled.json.data).toMatchObject({
+      gps_device_id: id, connection_config: { disabled: false, interval_seconds: 15 }, last_received_at: receivedAt,
+    });
+  });
 });
 
 describe("encrypted provider credentials", () => {

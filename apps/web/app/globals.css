@@ -1,26 +1,198 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: Roboto;
+  src: url("/fonts/roboto-latin.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Noto Sans Thai";
+  src: url("/fonts/noto-sans-thai.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono-latin.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --fleet-page: #f4f6f8;
+  --fleet-surface: #f8f9fb;
+  --fleet-quiet: #e9edf2;
+  --fleet-line: #d1d9e6;
+  --fleet-text: #2c2c2c;
+  --fleet-muted: #535d6b;
+  --fleet-selected: #f9e5e7;
+  --fleet-accent: #a72d3a;
+  --fleet-focus: #b42f3d;
+  --fleet-signal: #eb5757;
+  --fleet-signal-hover: #f07373;
+  --fleet-on-signal: #241718;
+  --fleet-highlight: #ffffff;
+  --fleet-radius: 20px;
+  --fleet-shadow-control: 2px 3px 7px #c0cad755, -2px -2px 6px #ffffffd9;
+  --fleet-shadow-card: 3px 4px 12px #a7b5c231, -3px -3px 9px #ffffffd9;
+  --fleet-shadow-panel: 5px 9px 22px #45556b33, -3px -3px 10px #ffffff85;
+  --fleet-shadow-inset: inset 2px 2px 5px #8d9eb72e, inset -2px -2px 5px #ffffffbd;
+  --fleet-shadow-window: 9px 18px 44px #28374842, inset 0 1px 0 #ffffff;
+  --vayro-sans: Roboto, "Noto Sans Thai", "Leelawadee UI", Tahoma, sans-serif;
+  --vayro-mono: "JetBrains Mono", "Noto Sans Thai", Consolas, monospace;
+}
+
+[data-fleet-theme="dark"] {
+  color-scheme: dark;
+  --fleet-page: #20232a;
+  --fleet-surface: #282c34;
+  --fleet-quiet: #242830;
+  --fleet-line: #3e4653;
+  --fleet-text: #f4f6f8;
+  --fleet-muted: #b7bfcc;
+  --fleet-selected: #492e36;
+  --fleet-accent: #ff9ea1;
+  --fleet-focus: #ff9ea1;
+  --fleet-signal: #ff797d;
+  --fleet-signal-hover: #ff9699;
+  --fleet-highlight: #3b404a;
+  --fleet-shadow-control: 3px 3px 7px #15182080, -2px -2px 6px #41475360;
+  --fleet-shadow-card: 4px 5px 12px #15182075, -3px -3px 8px #42485445;
+  --fleet-shadow-panel: 6px 9px 24px #15182099, -2px -2px 8px #7a849d2e;
+  --fleet-shadow-inset: inset 2px 2px 6px #15182080, inset -2px -2px 5px #4c4d5b40;
+  --fleet-shadow-window: 9px 18px 44px #151820ad, inset 0 1px 0 #444a56;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--fleet-page);
+  --color-foreground: var(--fleet-text);
+  --font-sans: var(--vayro-sans);
+  --font-mono: var(--vayro-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@utility soft-card {
+  border-radius: var(--fleet-radius);
+  box-shadow: var(--fleet-shadow-card);
+}
+
+@utility soft-panel {
+  border-radius: var(--fleet-radius);
+  box-shadow: var(--fleet-shadow-panel);
+}
+
+@utility soft-control {
+  box-shadow: var(--fleet-shadow-control);
+}
+
+@utility soft-inset {
+  box-shadow: var(--fleet-shadow-inset);
+}
+
+@utility soft-window {
+  border-radius: var(--fleet-radius);
+  box-shadow: var(--fleet-shadow-window);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--fleet-page);
+  color: var(--fleet-text);
+  font-family: var(--vayro-sans);
+}
+
+@keyframes route-flow {
+  to { stroke-dashoffset: -104; }
+}
+
+@keyframes truck-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -3px; }
+}
+
+@keyframes destination-pulse {
+  0% { opacity: .7; scale: .45; }
+  90%, 100% { opacity: 0; scale: 1.5; }
+}
+
+@keyframes panel-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .layout-wheel {
+    --wheel-ease: cubic-bezier(0.23, 1, 0.32, 1);
+    transition: display 190ms allow-discrete, overlay 190ms allow-discrete;
+  }
+
+  .layout-wheel:not([open]),
+  .layout-wheel:not([open])::backdrop {
+    pointer-events: none;
+  }
+
+  .layout-wheel::backdrop {
+    opacity: 0;
+    transition: opacity 190ms ease-out, display 190ms allow-discrete, overlay 190ms allow-discrete;
+  }
+
+  .layout-wheel-surface {
+    clip-path: circle(12% at center);
+    opacity: 0;
+    transition: clip-path 190ms var(--wheel-ease), opacity 190ms ease-out;
+  }
+
+  .layout-wheel [data-wheel-option] {
+    --wheel-option-start: translate(var(--wheel-option-x, 0), var(--wheel-option-y, 0)) scale(0.9);
+    transform: var(--wheel-option-start);
+    transition: transform 190ms var(--wheel-ease);
+  }
+
+  .layout-wheel [data-wheel-option="summary"] { --wheel-option-y: 150%; }
+  .layout-wheel [data-wheel-option="details"] { --wheel-option-y: -150%; }
+  .layout-wheel [data-wheel-option="list"] { --wheel-option-x: -65%; }
+  .layout-wheel [data-wheel-option="alerts"] { --wheel-option-x: 65%; }
+
+  .layout-wheel [data-wheel-option="list"],
+  .layout-wheel [data-wheel-option="alerts"] {
+    --wheel-option-delay: 30ms;
+  }
+
+  .layout-wheel[open]::backdrop {
+    opacity: 1;
+    transition-duration: 240ms;
+  }
+
+  .layout-wheel[open] .layout-wheel-surface {
+    clip-path: circle(76% at center);
+    opacity: 1;
+    transition-duration: 240ms;
+  }
+
+  .layout-wheel[open] [data-wheel-option] {
+    transform: none;
+    transition-duration: 240ms;
+    transition-delay: var(--wheel-option-delay, 0ms);
+  }
+
+  @starting-style {
+    .layout-wheel[open]::backdrop {
+      opacity: 0;
+    }
+
+    .layout-wheel[open] .layout-wheel-surface {
+      clip-path: circle(12% at center);
+      opacity: 0;
+    }
+
+    .layout-wheel[open] [data-wheel-option] {
+      transform: var(--wheel-option-start);
+    }
+  }
 }

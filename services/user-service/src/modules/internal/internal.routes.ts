@@ -6,9 +6,11 @@ import { DUMMY_HASH, hashPassword, verifyPassword } from "../../lib/password";
 import { prisma } from "../../lib/prisma";
 import { emailSchema, nameSchema, publicUser, USER_SELECT } from "../users/users.model";
 import * as users from "../users/users.repository";
+import { employeeCounts } from "../dashboard/dashboard.repository";
 
 // Service-to-service API. Not reachable through the gateway; every call needs the internal token.
 export const internalRoutes = new Elysia({ prefix: "/internal" }).use(http).use(internalGuard(config.internalToken))
+  .get("/dashboard/summary", async ({ query }) => ok(await employeeCounts(parseId(query.company_id))), { query: t.Object({ company_id: idSchema }, { additionalProperties: false }) })
   // Used by auth-service at login. The hash never leaves this service: only the verdict and the user do.
   // `user` is set whenever the email exists, even when the password is wrong (needed for auth-service's audit trail).
   .post("/credentials/verify", async ({ body }) => {

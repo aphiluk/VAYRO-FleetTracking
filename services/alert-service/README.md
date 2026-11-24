@@ -6,7 +6,7 @@ Alert rules, circular geofences, and the alerts raised from GPS points and job e
 | --- | --- |
 | Database | `alert_db` (role `alert_svc`), Prisma schema in `prisma/schema.prisma` |
 | Owns tables | `alert_rules`, `geofences`, `alerts`, `system_log`, plus `vehicle_signal_state` (operational state, not a Data Dictionary table) |
-| Gateway prefix | see `gateway/src/index.ts` |
+| Gateway prefix | see `gateway/src/app.ts` |
 
 ## Public endpoints (from the project PDF, pages 18-26)
 

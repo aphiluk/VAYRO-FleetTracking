@@ -1,0 +1,14 @@
+# Opt-in ports for local service diagnostics and direct-service E2E checks.
+services:
+  auth-service:
+    ports:
+      - "127.0.0.1:${AUTH_PORT:-3002}:3000"
+  user-service:
+    ports:
+      - "127.0.0.1:${USER_PORT:-3003}:3000"
+  gps-data-service:
+    ports:
+      - "127.0.0.1:${TRACKING_PORT:-3004}:3000"
+  navigation-service:
+    ports:
+      - "127.0.0.1:${NAVIGATION_PORT:-3014}:3000"

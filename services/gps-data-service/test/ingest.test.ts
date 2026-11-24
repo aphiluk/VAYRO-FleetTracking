@@ -3,6 +3,7 @@
 // Needs DATABASE_URL (gps_data_db). Fixtures use unique ids per run and are kept.
 import { beforeAll, describe, expect, test } from "bun:test";
 import { ApiError, type Caller } from "@vayro/service-kit";
+import { createGateway } from "../../../gateway/src/app";
 
 if (!process.env.DATABASE_URL) throw new Error("Set DATABASE_URL to the gps_data_db connection string");
 process.env.INTERNAL_API_TOKEN ??= "unit-test-internal-token-not-for-deployment-123456";
@@ -63,7 +64,7 @@ function newApp(company = companyA, code = "gps-demo", fleetImpl = fleet) {
   return createGpsDataApp({ tokens: parseTokenConfig(JSON.stringify({ [deviceToken]: { role: "gps_device", company_id: company, device_code: code } })), resolveUser, fleet: fleetImpl, devices: deviceDirectory, events }).compile();
 }
 let app = newApp();
-async function call(method: string, path: string, token?: string, body?: object, target = app, headers: Record<string, string> = {}) {
+async function call(method: string, path: string, token?: string, body?: object, target: Pick<typeof app, "handle"> = app, headers: Record<string, string> = {}) {
   const response = await target.handle(new Request(`http://localhost${path}`, { method,
     headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body ? { "content-type": "application/json" } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined }));
   return { status: response.status, json: await response.json() };
@@ -206,6 +207,55 @@ describe("GPS ingest and stored positions", () => {
     expect((await call("POST", "/api/v1/gps/ingest", deviceToken, { device_code: "gps-demo", recorded_at: at(), latitude: 1, longitude: 1 }, down)).status).toBe(503);
     expect(await prisma.gpsLocation.count({ where: { company_id: BigInt(companyA) } })).toBe(before);
   });
+});
+
+test("Gateway stores a driver phone fix and returns its latest position only to staff of that company", async () => {
+  const phoneVehicle = String(run + 60n);
+  const code = "apk-gateway-test";
+  const job = `${companyA}:${phoneVehicle}:${driverId}`;
+  vehicles.set(phoneVehicle, { vehicle_id: phoneVehicle, company_id: companyA, vehicle_status: "active", current_driver_id: driverId });
+  devices.set(`${companyA}:${code}`, { gps_device_id: String(run + 61n), company_id: companyA, vehicle_id: phoneVehicle, source_type: "driver_mobile_app", disabled: false });
+  const service = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request) => app.handle(request) });
+  const gateway = createGateway({ GPS_DATA_SERVICE_URL: service.url.origin }).compile();
+  const read = (ids: string, token?: string) => call("GET", `/api/v1/gps/fleet/latest?vehicle_ids=${ids}`, token, undefined, gateway);
+
+  try {
+    const point = { device_code: code, external_record_id: "phone-current", latitude: 13.7563, longitude: 100.5018, direction_degree: 90, recorded_at: at() };
+    const write = (body: object) => call("POST", "/api/v1/gps/ingest", "driver", body, gateway);
+    expect((await write(point)).status).toBe(403);
+    expect((await read(phoneVehicle, "admin-a")).json.data.points).toEqual([]);
+    activeJobs.add(job);
+
+    const late = { ...point, external_record_id: "phone-late", recorded_at: at(-600_000) };
+    expect((await write(late)).status).toBe(201);
+    const old = await read(phoneVehicle, "admin-a");
+    expect(old.json.data.points[0].freshness).toBe("delayed");
+    expect((await write(point)).status).toBe(201);
+    expect((await write({ ...late, external_record_id: "phone-backfill" })).status).toBe(201);
+
+    for (const token of ["admin-a", "dispatcher"]) {
+      const latest = await read(`${phoneVehicle},${phoneVehicle},${vehicleB}`, token);
+      expect(latest.status).toBe(200);
+      expect(latest.json.data.company_id).toBe(companyA);
+      expect(latest.json.data.points).toEqual([expect.objectContaining({
+        vehicle_id: phoneVehicle, latitude: point.latitude, longitude: point.longitude,
+        direction_degree: 90, speed_kmh: null, recorded_at: point.recorded_at,
+        received_at: expect.any(String), freshness: "current", anomalies: [],
+      })]);
+    }
+    expect((await read(phoneVehicle, "admin-b")).json.data.points).toEqual([]);
+    expect((await read(phoneVehicle)).status).toBe(401);
+    expect((await read(phoneVehicle, "driver")).status).toBe(403);
+    expect((await read(phoneVehicle, deviceToken)).status).toBe(403);
+    expect((await read(`${phoneVehicle}&company_id=${companyB}`, "admin-a")).status).toBe(422);
+    expect((await read(Array(101).fill("1").join(","), "admin-a")).status).toBe(422);
+
+    activeJobs.delete(job);
+    expect((await write({ ...point, external_record_id: "after-job" })).status).toBe(403);
+  } finally {
+    activeJobs.delete(job);
+    service.stop(true);
+  }
 });
 
 describe("abnormal and missing data on stored points", () => {

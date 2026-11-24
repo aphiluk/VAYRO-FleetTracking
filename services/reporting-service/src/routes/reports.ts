@@ -22,7 +22,7 @@ const common = (maxLimit: number) => ({
 });
 const period = { from: t.Optional(dateTime), to: t.Optional(dateTime) };
 const VEHICLE_STATUS = t.Optional(t.Union([t.Literal("active"), t.Literal("inactive"), t.Literal("maintenance")]));
-const JOB_STATUS = t.Optional(t.Union(["pending", "assigned", "in_progress", "completed", "cancelled", "problem"].map((s) => t.Literal(s))));
+const JOB_STATUS = t.Optional(t.Union(["pending", "assigned", "accepted", "in_progress", "completed", "cancelled", "problem"].map((s) => t.Literal(s))));
 const ALERT_TYPE = t.Optional(t.Union(["gps_offline", "overspeed", "geofence_enter", "geofence_exit", "system_anomaly", "job_assignment"].map((s) => t.Literal(s))));
 const ALERT_STATUS = t.Optional(t.Union(["unread", "read", "handling", "resolved"].map((s) => t.Literal(s))));
 

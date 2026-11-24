@@ -6,7 +6,7 @@ GPS devices / data sources of a vehicle and their connection status.
 | --- | --- |
 | Database | `gps_device_db` (role `gps_device_svc`), Prisma schema in `prisma/schema.prisma` |
 | Owns tables | `gps_devices` |
-| Gateway prefix | see `gateway/src/index.ts` |
+| Gateway prefix | `/api/v1/gps-devices` |
 
 ## Provider credentials (PDF page 21: credentials must be encrypted)
 
@@ -20,6 +20,7 @@ GPS devices / data sources of a vehicle and their connection status.
 - [x] `PUT /api/v1/gps-devices/:id`
 - [x] `DELETE /api/v1/gps-devices/:id`
 - [x] `GET /api/v1/gps-devices/:id/status`
+- [x] `PATCH /api/v1/gps-devices/:id/status` with `{ "enabled": true|false }` for Platform Admin or Company Admin. Changes the receiving status while preserving the device and history, alongside an audit entry when the status changes.
 
 Every endpoint must check Authentication, Role and `company_id` from the signed-in user, never from the request body (PDF page 18).
 

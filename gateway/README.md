@@ -1,15 +1,12 @@
-# Elysia with Bun runtime
+# VAYRO API Gateway
 
-## Getting Started
-To get started with this template, simply paste this command into your terminal:
-```bash
-bun create elysia ./elysia-example
+`src/app.ts` maps active public `/api/v1` prefixes to their services. `src/index.ts` starts the Elysia HTTP listener. `GET /` checks whether the Gateway process is responsive. Domain services own authentication checks, permission enforcement, request validation and data access.
+
+Gateway rebuilds forwarding headers and generates `x-request-id`. It relays selected response headers including `cache-control`. Private `/internal/*` routes stay on the service network. Upstream calls have a 12-second deadline and return the standard error envelope on 502 or 504. Gateway issues a single attempt.
+
+```sh
+bun run --cwd gateway test
+docker compose up --build -d --wait
 ```
 
-## Development
-To start the development server run:
-```bash
-bun run dev
-```
-
-Open http://localhost:3000/ with your browser to see the result.
+The tests use local stub upstreams. In Compose, call the Gateway on `localhost:3001`. For manual Bun development, set `PORT=3001` and the relevant `*_SERVICE_URL` environment variables, then run `bun run dev:gateway` from the repo root. See the [API prefix list](../docs/INTEGRATION.md).

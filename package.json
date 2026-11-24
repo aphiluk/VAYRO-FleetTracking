@@ -27,6 +27,7 @@
     "dev:alert": "bun --cwd services/alert-service dev",
     "dev:reporting": "bun --cwd services/reporting-service dev",
     "dev:integration": "bun --cwd services/integration-service dev",
+    "dev:navigation": "bun --cwd services/navigation-service dev",
     "db:generate": "bun run --filter './services/*' db:generate"
   }
 }

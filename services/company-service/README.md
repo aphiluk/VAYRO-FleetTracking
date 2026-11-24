@@ -6,7 +6,7 @@ Company workspaces: registration request, Platform Admin approval / rejection / 
 | --- | --- |
 | Database | `company_db` (role `company_svc`), Prisma schema in `prisma/schema.prisma` |
 | Owns tables | `company` |
-| Gateway prefix | see `gateway/src/index.ts` |
+| Gateway prefix | `/api/v1/companies` |
 
 ## Public endpoints (from the project PDF, pages 18-26)
 

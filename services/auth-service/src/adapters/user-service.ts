@@ -9,6 +9,7 @@ const companies = internalClient(config.companyServiceUrl, config.internalToken)
 export interface SessionUser {
   user_id: string;
   company_id: string | null;
+  company_name: string | null;
   full_name: string;
   email: string;
   role: "platform_admin" | "company_admin" | "dispatcher" | "driver";
@@ -16,20 +17,21 @@ export interface SessionUser {
   account_status: "active" | "inactive" | "suspended";
   workspace_status: string | null;
 }
-type PublicUser = Omit<SessionUser, "workspace_status">;
+type PublicUser = Omit<SessionUser, "workspace_status" | "company_name">;
 
 const unexpected = (service: string, status: number) => new ApiError(502, "UPSTREAM_ERROR", `${service} returned ${status}`);
 
 // null for Platform Admins (no company) and for a company that does not exist: both are "not usable" for company roles.
-async function workspaceStatus(companyId: string | null): Promise<string | null> {
-  if (companyId === null) return null;
+async function workspace(companyId: string | null): Promise<Pick<SessionUser, "workspace_status" | "company_name">> {
+  const unavailable = { workspace_status: null, company_name: null };
+  if (companyId === null) return unavailable;
   const { status, body } = await companies("GET", `/internal/companies/${companyId}`);
-  if (status === 404) return null;
+  if (status === 404) return unavailable;
   if (status !== 200) throw unexpected("company-service", status);
-  return body.data.workspace_status;
+  return { workspace_status: body.data.workspace_status, company_name: typeof body.data.company_name === "string" ? body.data.company_name.trim() || null : null };
 }
 
-const withWorkspace = async (user: PublicUser): Promise<SessionUser> => ({ ...user, workspace_status: await workspaceStatus(user.company_id) });
+const withWorkspace = async (user: PublicUser): Promise<SessionUser> => ({ ...user, ...await workspace(user.company_id) });
 
 // `user` is set whenever the email exists, even when the password is wrong (needed for the audit trail).
 export async function verifyCredentials(email: string, password: string): Promise<{ valid: boolean; user: SessionUser | null }> {

@@ -1,5 +1,5 @@
 import { http, ok, type Identity } from "@vayro/service-kit";
-import { Elysia } from "elysia";
+import { Elysia, t } from "elysia";
 import type { VehicleDirectory } from "../adapters/vehicle-directory";
 import * as devices from "../application/devices";
 import { createDeviceBody, idParams, listDevicesQuery, updateDeviceBody } from "../schemas/device.schema";
@@ -24,4 +24,7 @@ export const deviceRoutes = ({ resolveUser, vehicles }: RouteDeps) =>
       body: updateDeviceBody,
     })
     .delete("/api/v1/gps-devices/:id", async ({ caller, params, ip }) => ok(await devices.disableDevice({ identity: caller, vehicles, ip }, params.id), "GPS connection disabled; history preserved"), { params: idParams })
+    .patch("/api/v1/gps-devices/:id/status", async ({ caller, params, body, ip }) => {
+      return ok(await devices.setDeviceEnabled({ identity: caller, vehicles, ip }, params.id, body.enabled));
+    }, { params: idParams, body: t.Object({ enabled: t.Boolean() }, { additionalProperties: false }) })
     .get("/api/v1/gps-devices/:id/status", async ({ caller, params }) => ok(await devices.getDeviceStatus(caller, params.id)), { params: idParams });

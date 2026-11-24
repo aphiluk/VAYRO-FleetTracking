@@ -1,4 +1,4 @@
-// End-to-end auth test. Needs: `docker compose up -d --wait postgres auth-service user-service gateway`.
+// End-to-end auth test. Needs: `docker compose -f compose.yaml -f compose.debug.yaml up --build -d --wait auth-service gateway`.
 // Run from the repo root: `node services/auth-service/test/e2e.mjs`.
 // It creates throwaway companies/users (unique per run) and activates them with SQL via `docker compose exec`.
 import { execSync } from "node:child_process";
@@ -211,6 +211,8 @@ check("user-service health", (await fetch(`${process.env.USER_URL ?? "http://127
 
 // gateway allowlist + malformed
 r = await call("GET", "/vehicles");
+check("gateway forwards protected vehicle route", r.status === 401 && r.json?.error.code === "UNAUTHORIZED", r);
+r = await call("GET", "/vehicles-unknown");
 check("gateway blocks unknown path 404", r.status === 404, r);
 const raw = await fetch(BASE + "/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: "{bad" });
 check("malformed JSON 4xx not 500", raw.status >= 400 && raw.status < 500, raw.status);

@@ -2,15 +2,17 @@ import { http, idSchema, internalGuard, ok, optionalWindow, parseId, sum, zeroFi
 import { Elysia, t } from "elysia";
 import { config } from "../../config/env";
 import { Prisma, prisma } from "../../lib/prisma";
-import { windowEnd, type JobStatus } from "../jobs/jobs.rules";
+import { jobCounts } from "../dashboard/dashboard.repository";
+import { windowEnd } from "../jobs/jobs.rules";
 
-const STATUSES = ["pending", "assigned", "in_progress", "completed", "cancelled", "problem"] as const;
+const STATUSES = ["pending", "assigned", "accepted", "in_progress", "completed", "cancelled", "problem"] as const;
 const dateTime = t.String({ format: "date-time" });
 const iso = (d: Date | null) => d?.toISOString() ?? null;
 const idOrNull = (v: bigint | null) => (v === null ? null : String(v));
 
 // Service-to-service API. Not reachable through the gateway; every call needs the internal token.
 export const internalRoutes = new Elysia({ prefix: "/internal" }).use(http).use(internalGuard(config.internalToken))
+  .get("/dashboard/summary", async ({ query }) => ok(await jobCounts(parseId(query.company_id))), { query: t.Object({ company_id: idSchema }, { additionalProperties: false }) })
   // Does this driver have a job in progress on this vehicle? Used to accept driver phone positions.
   .get("/jobs/in-progress", async ({ query }) => {
     const job = await prisma.transportJob.findFirst({
@@ -94,7 +96,7 @@ export const internalRoutes = new Elysia({ prefix: "/internal" }).use(http).use(
     return ok(rows.map((row) => ({
       job_id: String(row.job_id),
       started_at: row.actual_start_at!.toISOString(),
-      ended_at: windowEnd({ actual_end_at: row.actual_end_at, job_status: row.job_status as JobStatus, updated_at: row.updated_at })?.toISOString() ?? null,
+      ended_at: windowEnd(row)?.toISOString() ?? null,
     })));
   }, {
     query: t.Object({ company_id: idSchema, driver_id: idSchema, vehicle_id: idSchema, from: t.Optional(t.String({ format: "date-time" })), to: t.Optional(t.String({ format: "date-time" })) }),

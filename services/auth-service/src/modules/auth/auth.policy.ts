@@ -17,6 +17,7 @@ export function denyReason(u: Pick<SessionUser, "account_status">) {
 export const publicUser = (u: SessionUser) => ({
   user_id: u.user_id,
   company_id: u.company_id,
+  company_name: u.company_name,
   full_name: u.full_name,
   email: u.email,
   role: u.role,

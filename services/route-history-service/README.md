@@ -6,7 +6,7 @@ Route history of a vehicle over a time range: points, route and an approximate d
 | --- | --- |
 | Database | none (stateless) |
 | Owns tables | - |
-| Gateway prefix | see `gateway/src/index.ts` |
+| Gateway prefix | Reserved for a future Route History API |
 
 ## Public endpoints (from the project PDF, pages 18-26)
 

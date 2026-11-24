@@ -1,201 +1,102 @@
-# VAYRO Fleet Tracking: Project and System Structure
+# โครงสร้าง VAYRO Fleet Tracking
 
-Backend branch note: web prototype details in this local inventory are reference only. Frontend prototype changes are excluded from the Backend commit; the committed web is the original scaffold.
+VAYRO เป็นแพลตฟอร์มติดตามรถสำหรับหลายบริษัท แต่ละ Workspace จัดการรถ คนขับ งานขนส่ง และแหล่ง GPS ของตนเอง เว็บให้บริการผู้ดูแลและ Dispatcher ส่วนคนขับมีเว็บต้นแบบสำหรับรับและดำเนินงาน แอป Android สำหรับส่งตำแหน่งจริงยังอยู่ในแผนและยังไม่ได้เลือกเฟรมเวิร์ก
 
-เอกสารนี้อธิบายทั้งโครงสร้างที่มีอยู่จริงใน repository และโครงสร้างเป้าหมายสำหรับพัฒนาต่อ แยกสองส่วนนี้ไว้ชัดเจนเพื่อไม่ให้เข้าใจว่าโฟลเดอร์หรือฟีเจอร์ที่ยังไม่ได้สร้างมีอยู่แล้ว
+โครงสร้างนี้อิงขอบเขตงานจากเอกสารโครงงานและหลักการใน `deep-research-report.md` ได้แก่ แบ่งตามความสามารถทางธุรกิจ ให้บริการเจ้าของข้อมูลควบคุมการอ่านเขียน และเปิดให้เรียกเฉพาะ API ที่พร้อมใช้ โครงการใช้ Bun workspaces, Next.js App Router, Elysia บน Bun และ PostgreSQL ผ่าน Prisma ส่วน MapLibre แสดงแผนที่ถนนและ Three.js ใช้แสดงเดโม 3D โค้ดปัจจุบันเข้าฐานข้อมูลผ่าน Prisma ในบริการเจ้าของข้อมูล หากเพิ่ม PostgREST ให้ใช้อยู่หลัง API ภายในขอบเขตของเจ้าของข้อมูล
 
-## 1. ภาพรวมโครงการ
-
-แพลตฟอร์ม B2B สำหรับติดตามรถของหลายบริษัท รับตำแหน่งจาก GPS ของผู้ให้บริการหรือจากโทรศัพท์พนักงานขับรถ จัดเก็บประวัติ แสดงรถและงานขนส่งบน Dashboard แจ้งเหตุการณ์ และจัดทำรายงาน
-
-ข้อกำหนดจากเอกสารโครงงานประกอบด้วยการแยกข้อมูลตามบริษัท บทบาท Platform Admin, Company Admin, Dispatcher และ Driver การจัดการรถ/ผู้ขับ/งาน การตรวจสอบคุณภาพข้อมูล GPS การติดตามปัจจุบันและย้อนหลัง การแจ้งเตือน รายงาน และ API สำหรับระบบภายนอก
-
-บริบทเพิ่มเติมจากเจ้าของโครงการ: ทำ GPS demo โดยรับ Location จากโทรศัพท์ ส่งผ่าน Server และต้องการนำเสนอ UI ในรูปแบบ 3D
-
-## 2. เทคโนโลยีที่กำหนด
-
-| ส่วน | เทคโนโลยี | หน้าที่ |
-| --- | --- | --- |
-| Web dashboard | Next.js + TypeScript | หน้าบริหารแพลตฟอร์มและบริษัท, ตารางรถ/งาน, รายงาน และมุมมองติดตาม |
-| Backend/API | Elysia + Bun | ยืนยันตัวตนและสิทธิ์, API ของผลิตภัณฑ์, รับข้อมูลตำแหน่ง และประสานงานกับข้อมูล |
-| Database | PostgreSQL | จัดเก็บข้อมูลบริษัท รถ งาน ตำแหน่ง ประวัติ แจ้งเตือน และกิจกรรม |
-| ORM / migrations | Prisma | แต่ละ service มี `prisma/schema.prisma` และ migration ของตัวเอง; ฐานข้อมูลแยกต่อ service (ดู docs/DATABASE.md) |
-| Data API | PostgREST | เปิด endpoint สำหรับข้อมูล PostgreSQL ให้ backend ใช้ตามความเหมาะสม; ไม่ใช่ตัวฐานข้อมูล |
-| 3D UI | Three.js | แสดงฉาก/รถ/เส้นทางใน dashboard โดยอิงข้อมูลพิกัดและสถานะจริงที่มี |
-| Container | Docker / Docker Compose | เตรียมสภาพแวดล้อมสำหรับรันบริการและฐานข้อมูลร่วมกัน |
-| Driver GPS demo | Android APK | ส่งตำแหน่งโทรศัพท์ผ่าน Elysia API ตามการยืนยันตัวตนและช่วงเวลางาน |
-
-**ยังไม่กำหนด:** framework ที่ใช้สร้าง APK, ผู้ให้บริการแผนที่/tiles, รูปแบบ protocol ของ GPS ภายนอก และค่าความถี่ส่งตำแหน่งจริง ให้เลือกเมื่อมี requirement หรือแหล่งข้อมูลพร้อม
-
-## 3. Current local implementation (2026-11-15)
-
-The project brief (PDF page 7, "Modular Monolith แยก 12 Service Modules") defines **12 service modules**, listed with their endpoints on PDF pages 18-26. All 12 now exist as folders under `services/`. Each service that owns data has its own database (one Postgres server, one database and login role per service) and is managed with Prisma. Services never read each other's tables: they call each other's `/internal/*` API with `INTERNAL_API_TOKEN`. Field names, ids and the 14-table Data Dictionary contract are unchanged. Ownership and migration steps are in [DATABASE.md](DATABASE.md).
-
-| # | Service folder | Database | Tables it owns | Status |
-| --- | --- | --- | --- | --- |
-| 1 | `auth-service` | `auth_db` | `auth_sessions` | done (4 endpoints) |
-| 2 | `company-service` | `company_db` | `company` | all 7 PDF endpoints (register, list, get, edit, approve, reject, status) + internal lookup |
-| 3 | `user-service` | `user_db` | `users` | done (8 endpoints) |
-| 4 | `vehicle-service` | `vehicle_db` | `vehicle_types`, `vehicles` | data only; internal lookup, public API to do |
-| 5 | `gps-device-service` | `gps_device_db` | `gps_devices` | done (6 endpoints, encrypted provider credentials) |
-| 6 | `gps-data-service` | `gps_data_db` | `gps_locations` | done (3 endpoints, abnormal/missing-data detection, event push) |
-| 7 | `tracking-service` | none | none | empty skeleton |
-| 8 | `route-history-service` | none | none | public API done (route, points, summary); driver limited to own job time |
-| 9 | `transport-service` | `transport_db` | `transport_jobs`, `system_log` | public API done (jobs, driver jobs); internal lookups |
-| 10 | `alert-service` (Alert & Geofence) | `alert_db` | `alert_rules`, `geofences`, `alerts`, `system_log`, `vehicle_signal_state` | public API done; receives GPS points (overspeed, geofence, abnormal data) and checks GPS offline |
-| 11 | `reporting-service` | none | none | done (7 endpoints, CSV export; reads the other services' `/internal` stats) |
-| 12 | `integration-service` (Integration & Logging) | `integration_db` | `api_integrations`, `api_request_logs`, `system_log` | API keys, request log, system-log view done; gateway does not enforce API keys yet |
-
-Every service has a `README.md` with its PDF endpoint checklist, the internal API it offers, and the data it must ask other services for. Skeletons already boot, answer the Docker health check, and have `src/plugins/guard.ts` ready for protected routes.
+## 1. เส้นทางคำขอ
 
 ```text
-apps/web/                            # Frontend is a separate responsibility
-gateway/                             # routes public paths to the 12 services (route table); never proxies /internal/*
-services/*-service/                  # the 12 modules above
-packages/service-kit/                # shared plumbing: ApiError/ok/http plugin, ids, internal-call client, audit helper, auth guard factory
-packages/shared-types/               # shared Auth/User/GPS request/response types
-infra/database/init/                 # creates one database + role per service on a new volume
-infra/database/split-legacy.sh       # one-time copy from the old shared database
-infra/database/legacy/               # old shared-schema SQL, reference only
-docs/data-dictionary.json            # machine-readable 14-table field contract
-docs/API_DATA_CONTRACT.md            # Canonical fields and API representation
-docs/DATABASE.md                     # database ownership, Prisma workflow, migration from the shared database
-compose.yaml                         # PostgreSQL + the 12 services + gateway + optional Web
+Browser ──> Next.js UI / BFF ──> Elysia Gateway ──> Elysia domain services
+Android (ตามแผน) / GPS client ──> Elysia Gateway ──┘          │
+                                                             ├──> ฐานข้อมูล PostgreSQL ของบริการ
+                                                             └──> /internal/* ของบริการเจ้าของข้อมูล
 ```
 
-Every service with a database has `prisma/schema.prisma`, `prisma/migrations/` and `prisma.config.ts`; the generated client lives in `src/generated/` (not committed).
+- **Next.js BFF** แสดงหน้าเว็บ จัดการ session cookie แบบ HttpOnly และส่ง bearer token ไป Gateway จากฝั่งเซิร์ฟเวอร์ ตัวอย่างเส้นทางคือ `/api/fleet/*`, `/api/transport/*`, `/api/navigation/*` และ `/api/dashboard/company` ตั้ง `COOKIE_SECURE=true` เมื่อให้บริการด้วย HTTPS
+- **พิกัดบน Dashboard** ใช้ `/api/fleet/gps/latest` → Gateway → `GET /api/v1/gps/fleet/latest` ใน GPS Data สำหรับ Company Admin และ Dispatcher โหลดเป็นชุดตามทะเบียนใน Workspace ทุก 5 วินาทีขณะแท็บเปิด แสดงเวลาที่บันทึกและเวลาที่ได้รับ โดยแยกพิกัดเก่ากับพิกัดผิดปกติ ดู [วิธีทดสอบด้วย Android APK](APK_GPS_TEST.md)
+- **Manage → แหล่ง GPS** ให้ Company Admin ลงทะเบียนและแก้ไขแหล่งพิกัดของรถ คัดลอก `device_code` และเปิดหรือปิดการรับพิกัดผ่าน `/api/fleet/gps-devices` → Gateway → GPS Device Service แสดงสถานะและเวลาที่รับล่าสุด ตรวจรายการใหม่ทุก 15 วินาทีขณะเปิดเมนู การปิดรับพิกัดเก็บทะเบียนและประวัติเดิมไว้
+- **Gateway** ใช้รายการ prefix ใน [gateway/src/app.ts](../gateway/src/app.ts) ส่งคำขอสาธารณะตามขอบเขต API `/api/v1` โดยไม่ส่งต่อ `/internal/*` กำหนดเวลาให้ upstream 12 วินาทีตั้งแต่ส่งคำขอจนอ่าน response ครบ ให้ `504 UPSTREAM_TIMEOUT` เมื่อหมดเวลา และ `502 UPSTREAM_UNAVAILABLE` เมื่อการเชื่อมต่อล้มเหลวหรือ upstream ส่ง redirect Gateway ไม่ส่งคำขอซ้ำ คำขอเขียนที่หมดเวลาอาจบันทึกไปแล้ว ผู้เรียกควรตรวจสถานะก่อนส่งใหม่
+- **บริการเจ้าของโดเมน** ตรวจ schema, บทบาท สิทธิ์ต่อทรัพยากร และ Workspace ก่อนใช้ข้อมูล Auth ตรวจ token, session และสถานะบัญชี/บริษัทล่าสุด เส้นทางภายในใช้ `INTERNAL_API_TOKEN` และระบุขอบเขตบริษัทตามสัญญาของ endpoint `packages/service-kit` ให้ตัวช่วย HTTP และ client ภายในซึ่งมี timeout เริ่มต้น 3 วินาที
+- **ไคลเอนต์อุปกรณ์** ใช้ credential ของอุปกรณ์เพื่อส่ง GPS ผ่าน Gateway ส่วน Driver ใช้ตัวตนของบัญชีและต้องมีงานที่กำลังทำอยู่ตรงกับรถที่ได้รับมอบหมาย ทั้งเว็บและอุปกรณ์ใช้ API โดยไม่มีสิทธิ์เชื่อมฐานข้อมูล
 
-Inside a service the code is split by responsibility (examples from the three built services):
+## 2. ขอบเขตธุรกิจและเจ้าของข้อมูล
+
+Compose ชุดหลักรันบริการที่มี API พร้อม Web, Gateway และ PostgreSQL ส่วน Vehicle Tracking เปิดด้วยโปรไฟล์ `scaffold`
+
+| ขอบเขต | บริการ | ฐานข้อมูลและข้อมูลหลัก | ความสามารถปัจจุบัน |
+| --- | --- | --- | --- |
+| ตัวตนและ Workspace | `auth-service` | `auth_db` · `auth_sessions` | Login, refresh, logout, me และ internal introspection |
+| ตัวตนและ Workspace | `company-service` | `company_db` · `company` | สมัคร Workspace สถานะ pending และอ่านสถานะภายใน การอนุมัติผ่าน API ยังอยู่ในแผน |
+| ตัวตนและ Workspace | `user-service` | `user_db` · `users` | จัดการบัญชี โปรไฟล์ บทบาท และสถานะ |
+| ทะเบียนรถและแหล่ง GPS | `vehicle-service` | `vehicle_db` · `vehicles`, `vehicle_types` | จัดการรถ ประเภท สถานะ และคนขับประจำรถ |
+| ทะเบียนรถและแหล่ง GPS | `gps-device-service` | `gps_device_db` · `gps_devices` | จัดการและปิดการเชื่อมต่ออุปกรณ์ เก็บ credential ผู้ให้บริการแบบเข้ารหัสเมื่อมีคีย์ |
+| ตำแหน่งและประวัติ | `gps-data-service` | `gps_data_db` · `gps_locations` | รับตำแหน่ง อ่านจุดล่าสุด และอ่านประวัติรายรถ |
+| งานขนส่ง | `transport-service` | `transport_db` · `transport_jobs` | จัดการและมอบหมายงาน บันทึกเส้นทางที่เลือก และเปลี่ยนสถานะตามสิทธิ์ |
+| งานขนส่ง | `navigation-service` | ไม่มี | ค้นหาจุดด้วย Photon และคำนวณเส้นทางรถยนต์ด้วย Valhalla |
+| ภาพรวม | `reporting-service` | ไม่มี | Dashboard ของ Platform และบริษัท รายงาน CSV และ `GET /api/v1/dashboard/company/summary` สำหรับยอดรวมที่เว็บใช้ |
+| ตำแหน่งและประวัติ | `tracking-service`, `route-history-service` | ไม่มี | Route History อ่านจุดและสรุปเส้นทางจาก GPS Data ส่วน Vehicle Tracking ยังเป็นโครง |
+| การแจ้งเตือน | `alert-service` | `alert_db` · `alert_rules`, `geofences`, `alerts` | API จัดการกฎ พื้นที่ และเหตุการณ์ พร้อมประมวลผลตำแหน่ง GPS |
+| การเชื่อมต่อภายนอก | `integration-service` | `integration_db` · `api_integrations`, `api_request_logs`, `system_log` | API จัดการคีย์และดู log ส่วนการบังคับใช้คีย์ผ่าน Gateway อยู่ระหว่างพัฒนา |
+
+PostgreSQL ชุดพัฒนาใช้เซิร์ฟเวอร์เดียวและแยก database กับ login role ตามเจ้าของข้อมูล บริการเรียก API ของเจ้าของข้อมูลเมื่อต้องใช้ข้อมูลข้ามโดเมน โดยเก็บ ID อ้างอิงข้ามบริการเป็นค่า BIGINT และไม่สร้าง foreign key ข้ามฐานข้อมูล บริการที่บันทึก audit เก็บ `system_log` ในฐานข้อมูลของตัวเองตามรูปแบบที่ใช้ในบริการนั้น Compose ใช้รหัสผ่านแยกตามบริการ ดู [การจัดการฐานข้อมูลและ migrations](DATABASE.md) และ [สัญญาข้อมูล API](API_DATA_CONTRACT.md) สำหรับชื่อฟิลด์ BIGINT string และเวลา UTC ISO 8601
+
+## 3. โฟลเดอร์และวิธีรัน
 
 ```text
-auth-service/src                     user-service/src                      gps-data-service/src
-  config/env.ts                        config/env.ts                         config/env.ts
-  lib/    prisma, audit, jwt, ...      lib/    prisma, audit, password       lib/        prisma
-  adapters/user-service.ts             adapters/auth-service.ts, company-    adapters/   fleet-directory, device-directory,
-  plugins/guard.ts                       service.ts                            identity, device-tokens
-  modules/auth     routes/service/     plugins/guard.ts                      routes/     locations, internal (HTTP only)
-  modules/session  repository          modules/users  routes/service/        schemas/    request schemas + row -> API mapping
-  modules/internal routes                repository/model, internal           application/ use cases (ingest, queries)
-  app.ts, index.ts                     app.ts, index.ts                      domain/     pure GPS rules (freshness, limits)
-                                                                             infrastructure/ Prisma repositories
+apps/web/                  Next.js UI, Route Handlers และ server-side clients
+  app/api/                 BFF สำหรับ Dashboard, Fleet, Transport และ Navigation
+  app/dashboard/           แผนที่ ภาพรวม ทะเบียนรถ คนขับ งาน และ Manage
+  app/driver/              เว็บสำหรับ Driver
+  lib/                     การเรียก Gateway และจัดการ session ฝั่งเว็บ
+gateway/src/
+  app.ts                   ประกอบ Elysia app และกำหนดเส้นทางสาธารณะ
+  index.ts                 เริ่ม HTTP server
+gateway/test/              ทดสอบการส่งต่อคำขอและพฤติกรรมเมื่อ upstream ล้มเหลว
+services/*-service/        หน่วย deploy ของ backend ใน workspace เดียวกัน
+packages/shared-types/     DTO และชนิดข้อมูลที่แชร์ข้ามขอบเขต
+packages/service-kit/       ตัวช่วย HTTP, internal client, auth, ID และ audit
+infra/database/
+  init/                    สร้างฐานข้อมูลและ role เมื่อเริ่มจาก volume ใหม่
+  split-legacy.sh          ย้ายข้อมูลจากฐานข้อมูลรวมรุ่นเก่า
+  legacy/                  SQL เดิมสำหรับอ้างอิง
+compose.yaml               ชุดพัฒนาและโปรไฟล์ scaffold
+compose.debug.yaml         override สำหรับพอร์ตทดสอบบน localhost
+Dockerfile                 เป้าหมาย build สำหรับ API และ Web
 ```
 
-Rule of thumb: routes only parse HTTP and call a service/use case; services/use cases hold the rules and transactions; repositories are the only code that touches Prisma models; adapters wrap other services so tests can replace them with fakes.
+บริการส่วนใหญ่ประกอบปลั๊กอินใน `src/app.ts` และเริ่ม server ใน `src/index.ts` ภายในโดเมนให้ route แปลงและตรวจ HTTP input ให้ service/use case รับผิดชอบกติกากับการทำธุรกรรม ให้ repository เข้าถึง Prisma และให้ adapter ครอบการเรียกบริการอื่นหรือผู้ให้บริการภายนอก ยึดรูปแบบเดิมของแต่ละบริการ เช่น GPS Data ใช้ `routes/`, `application/`, `domain/` และ `infrastructure/`; Transport ใช้ `modules/jobs/` บริการที่มีฐานข้อมูลเก็บ migration ของตนใน `prisma/migrations/` และสร้าง Prisma client ลง `src/generated/` ตอน build หรือ `bun run db:generate`
 
-gps-data-service serves the three endpoints the PDF lists for service 6: `POST /api/v1/gps/ingest`, `GET /api/v1/gps/vehicles/:vehicleId/latest` and `/locations`. Services 7 (`/api/v1/tracking/*`: every vehicle's latest position with filters) and 8 (`/api/v1/routes/*`: route points and summary) are different endpoints; they are to read gps-data-service's `/internal/locations*`.
+Compose เปิด Web ที่ `127.0.0.1:3000` และ Gateway ที่ `127.0.0.1:3001` สำหรับการรันแบบปกติ บริการภายในและฐานข้อมูลเข้าถึงผ่านเครือข่าย Compose เปิดโปรไฟล์ `scaffold` เมื่อพัฒนาโครง Vehicle Tracking ส่วน direct-service E2E ใช้ override `compose.debug.yaml` health check HTTP `/` ตรวจว่า process ตอบได้ บริการฐานข้อมูลจะรัน Prisma migration ก่อนเริ่ม server และ readiness ที่ตรวจ dependency แยกจาก liveness เป็นงานสำหรับการ deploy จริง ดู [คำสั่งรันใน README](../README.md)
 
-All functions the PDF lists for services 1, 3, 5 and 6 are implemented. gps-data-service pushes new points only to services named in `GPS_EVENT_SUBSCRIBERS`; alert-service receives them (`.env.example` sets `GPS_EVENT_SUBSCRIBERS=http://alert-service:3000`).
-Root dev scripts exist for all 12 services. See the shared contract before writing new APIs; do not invent alternate field spellings. IDs are BIGINT strings; timestamps are UTC ISO 8601; GPS values use speed_kmh, direction_degree, accuracy_meters and gps_location_id.
+## 4. การไหลของงานสำคัญ
 
-## 4. โครงสร้างเป้าหมายที่แนะนำ
+**หน้าแนะนำ VAYRO** · `/` เปิดได้ก่อนเข้าสู่ระบบ แนะนำการติดตามรถ การจัดงาน และวิธีเปิด Workspace พร้อมลิงก์ไป `/login` และ `/register` หลังเข้าสู่ระบบ ผู้ใช้เข้า Dashboard หรือหน้า Driver ตามบทบาทของบัญชี
 
-นี่คือแนวทางการจัดวางโค้ดเมื่อเริ่มเพิ่มความสามารถ ไม่ใช่รายการไฟล์ที่มีอยู่แล้ว และสามารถปรับให้เข้ากับ implementation จริงได้
+**สมัครและเข้าระบบ** · Company สร้าง Workspace pending แล้วเรียก User เพื่อสร้าง Company Admin คนแรก หากขั้นหลังล้มเหลว Company พยายามลบ Workspace ชดเชย เวลาตอบกลับหมดหลัง User บันทึกสำเร็จหรือ process หยุดกลางทางอาจทิ้งสถานะไม่ครบ การอนุมัติ Workspace ยังต้องใช้ขั้นตอนสำหรับผู้ดูแลในการทดสอบ Login ตรวจ User และสถานะ Workspace ก่อนสร้าง session
 
-```text
-.
-├── apps/
-│   ├── web/                         # Next.js: Admin, Dispatcher, dashboard 3D
-│   └── driver-android/              # เป้าหมาย: แอป Driver และ APK demo (ยังไม่เลือก framework)
-├── gateway/                         # Elysia: API entry, auth, validation, routing
-├── services/
-│   ├── auth-service/                # Login, session/token และการตรวจตัวตน
-│   ├── user-service/                # บัญชี, role, account_status และโปรไฟล์
-│   ├── company-service/             # เป้าหมาย: บริษัทและสถานะ Workspace
-│   ├── vehicle-service/             # รถ, ประเภทรถ และการมอบหมายผู้ขับ
-│   ├── tracking-service/            # ingest GPS, normalize, validate, history, freshness
-│   ├── transport-service/           # งานขนส่ง, จุดรับ/ส่ง, สถานะงาน
-│   ├── notification-service/        # กฎแจ้งเตือนและสถานะการจัดการ
-│   └── reporting-service/           # รายงาน/aggregation เมื่อมีความจำเป็น
-├── packages/
-│   ├── shared-types/                # DTO/API contracts และชนิดข้อมูลร่วม
-│   └── service-kit/                 # ท่อร่วมของทุก service (http, id, internal call, audit, guard)
-├── infra/
-│   ├── docker/                      # Dockerfiles/config เฉพาะบริการเมื่อจำเป็น
-│   └── database/                    # migrations, schema และ seed สำหรับ local demo
-├── docs/
-│   ├── PROJECT_STRUCTURE.md
-│   └── api/                         # สัญญา API เมื่อเริ่มกำหนด endpoint
-├── compose.yaml                     # รัน stack สำหรับ dev/demo
-└── .env.example                     # ตัวอย่างชื่อตัวแปรเท่านั้น ไม่มี secret จริง
-```
+**จัดรถและดำเนินงาน** · Company Admin จัดการรถ ประเภท คนขับประจำรถ และสร้างหรือมอบหมายงาน Transport ตรวจรถและ Driver กับบริการเจ้าของข้อมูล ก่อนบันทึกการเปลี่ยนสถานะและ audit ใน transaction ฝั่งคนขับจำกัดรายการงานตามบัญชีและ Workspace สถานะหลักคือ `pending → assigned → accepted → in_progress → completed` งานที่รับแล้วหรือกำลังทำรายงานปัญหาและกลับมาทำต่อได้ และผู้มีสิทธิ์ยกเลิกงานที่ยังไม่จบ Transport ป้องกันรถหรือ Driver มีงานที่รับแล้วหรือกำลังทำซ้อนกัน การค้นหาและคำนวณถนนใช้ Navigation และเก็บผลที่เลือกเป็น snapshot ใน Transport
 
-เริ่มจากโมดูล/บริการที่จำเป็นต่อ vertical slice แรก อย่าสร้าง microservice แยกทุกโดเมนล่วงหน้าโดยไม่มีเหตุผลด้านการ deploy หรือการ scale รองรับ ชื่อในโครงสร้างนี้เป็นขอบเขตเชิงตรรกะที่แนะนำ; อาจคง deployment รวมกันได้
+**ตำแหน่ง GPS** · GPS Data ตรวจตัวตนและอ้างอิงอุปกรณ์ รถ และงานจากบริการเจ้าของข้อมูล จากนั้นเก็บ `recorded_at` กับ `received_at` แยกกัน รองรับตรวจข้อมูลซ้ำต่ออุปกรณ์ด้วย `external_record_id` ทำเครื่องหมายความผิดปกติและช่องว่างในประวัติ เส้นทางย้อนหลังต้องมาจากจุดที่เก็บจริง พร้อมระบุข้อมูลล่าช้าหรือไม่มีสัญญาณในหน้าติดตามที่จะพัฒนา การส่งเหตุการณ์ที่ตั้งผ่าน `GPS_EVENT_SUBSCRIBERS` เป็น HTTP แบบ best-effort และยังไม่มีตัวรับใน repository
 
-## 5. การไหลของข้อมูล
+**Dashboard** · เว็บโหลดทะเบียนรถ คนขับประจำรถ งาน และปัญหางานของบริษัทผ่าน BFF ภาพรวม Company Admin เรียก Reporting ให้ขอยอดพนักงาน รถ และงานจากเจ้าของข้อมูลพร้อมกัน นับครบโดยไม่อิง pagination ของรายการ หากโหลดล้มเหลว UI แสดงข้อผิดพลาดและบอกเมื่อใช้ข้อมูลชุดล่าสุดที่เคยโหลดได้ แผงแจ้งเตือนจริงแสดงปัญหางานจาก Transport ส่วนรายชื่อคนขับเต็มหน้า คำเชิญพนักงาน และ TestRole ยังมีส่วนที่ใช้เพื่อทดลอง UI
 
-```text
-Android APK (demo) ─┐
-                    ├─> Elysia API / Gateway ─> ตรวจตัวตนและสิทธิ์
-GPS provider ───────┘                           │
-                                                ├─> PostgreSQL (ผ่าน backend/PostgREST ตามขอบเขต)
-                                                └─> ส่งข้อมูลที่อนุญาตให้ Web dashboard
-                                                      ├─> รายการรถและสถานะข้อมูล
-                                                      ├─> เส้นทางย้อนหลัง/รายงาน
-                                                      └─> Three.js 3D presentation
-```
+## 5. บทบาทและสถานะข้อมูล
 
-หลักการสำคัญ:
+**แชตแจ้งเตือนรถ (ต้นแบบ)** · Dispatch และ Company Admin เปิดแชตจากรายละเอียดรถหรือเมนูแจ้งเตือนใน Bottom Bar ได้ รายการแยกรถใน Workspace กับรถจำลอง ผู้รับอ้างอิงคนขับจากงานปัจจุบันหรือคนขับประจำรถ ฝั่ง Driver มีเมนูข้อความ จำนวนข้อความใหม่ และช่องตอบกลับ ทั้งสองหน้าทดลองโต้ตอบกันได้เมื่อเปิดพร้อมกันในโปรไฟล์เบราว์เซอร์และ origin เดียวกัน โดยจับคู่ตาม Workspace และบัญชีคนขับผ่าน BroadcastChannel ข้อความจะหายเมื่อรีเฟรช ส่วนโหมดสลับบทบาทของ Dispatch และข้อความตัวอย่างของ Driver ทดสอบแยกได้ในแต่ละหน้า
 
-1. Web และ APK ส่ง request ไป backend เท่านั้น; ห้ามฝัง database credential หรือเรียกฐานข้อมูลโดยตรงจาก client
-2. Backend ตรวจสิทธิ์และ company/workspace scope ทุกครั้งก่อนอ่านหรือเขียนข้อมูล
-3. Adapter ของแต่ละแหล่ง GPS แปลงข้อมูลเข้าแบบข้อมูลกลางเดียวกัน
-4. เก็บ `recorded_at` (เวลาที่อุปกรณ์วัดตำแหน่ง) และ `received_at` (เวลาที่ server ได้รับ) แยกกัน เพื่อวัดความล่าช้าและทำเครื่องหมายข้อมูลเก่า
-5. Three.js แสดงข้อมูลที่ API ส่งให้ ไม่เป็นผู้คำนวณหรือยืนยันความถูกต้องของ GPS เอง
+- **Platform Admin** ดูแล Workspace และบัญชีระดับแพลตฟอร์มตามสิทธิ์ของ endpoint หน้าอนุมัติบริษัทและหน้าบริหารแพลตฟอร์มยังอยู่ในแผน
+- **Company Admin** จัดการบัญชี รถ แหล่ง GPS และงานภายในบริษัท และดูภาพรวมบริษัท
+- **Dispatcher** ดูรถและงานของบริษัท API ของ Transport รองรับการจัดการงานตามสิทธิ์ ส่วนหน้า Manage ปัจจุบันเปิดให้ Company Admin
+- **Driver** ดูและเปลี่ยนสถานะงานของตัวเอง เบื้องต้นใช้เว็บ `/driver` ซึ่งแสดงเส้นทางถนนและให้ผู้ขับเลือกขั้นตอนหรือยืนยันจบงานเอง API รับ GPS จาก Driver ได้เมื่อรถและงานผ่านเงื่อนไข แอปที่ส่งพิกัดอัตโนมัติยังอยู่ในแผน
+- **External API Client** เป็น credential แบบมี scope และผูก Workspace ตามแผน Integration แยกจาก bearer token ของบัญชีและ credential ปัจจุบันของอุปกรณ์ GPS
 
-## 6. โดเมนข้อมูลหลัก
+แผนที่จริงแสดงทะเบียนรถโดยไม่มีพิกัดจำลอง ส่วนรถและเส้นทาง 3D อยู่ในโหมดเดโม เส้นทางที่ Navigation คำนวณเป็นการประมาณสำหรับรถยนต์และยังไม่มีข้อจำกัดเฉพาะรถบรรทุก เมื่อเพิ่มการส่งตำแหน่งจากมือถือ ให้ขอสิทธิ์เท่าที่ใช้และส่งเฉพาะช่วงงานที่ได้รับมอบหมายและกำลังทำอยู่ ความถี่ขึ้นกับสิทธิ์ สัญญาณ ระบบปฏิบัติการ และแบตเตอรี่ การแจ้งเตือนต้องอิงข้อมูลที่มีและกฎที่ตั้งไว้ สภาพเครื่องยนต์และพฤติกรรมการขับต้องอาศัยอุปกรณ์หรือข้อมูลที่รองรับและแสดงว่าไม่พร้อมใช้เมื่อข้อมูลขาด
 
-| กลุ่ม | ข้อมูลสำคัญ | ข้อสังเกต |
-| --- | --- | --- |
-| Company / Workspace | `company`: company_id, company_name, workspace_status | ข้อมูลของแต่ละบริษัทแยกด้วย company_id |
-| User | `users`: user_id, company_id, role, account_status | Platform Admin มี company_id เป็น null; ไม่มีตาราง membership แยกในเอกสาร |
-| Vehicle | `vehicles`, `vehicle_types`: vehicle_code, license_plate, vehicle_status, current_driver_id | ประเภทรถและคนขับต้องอยู่ในบริษัทเดียวกับรถ |
-| GPS Source / Device | `gps_devices`: device_code, source_type, provider_name, connection_status | รองรับแหล่ง gps_device, provider_api, driver_mobile_app ตามเอกสาร |
-| GPS Position | `gps_locations`: latitude, longitude, speed_kmh, direction_degree, accuracy_meters, recorded_at, received_at | ค่า sensor ที่ไม่มีข้อมูลเป็น null |
-| Transport Job | `transport_jobs`: job_id, vehicle_id, driver_id, job_status | เก็บเวลานัดหมาย/เริ่ม/จบและ problem_note |
-| Route History | อ่าน `gps_locations` ตาม vehicle_id และ recorded_at | ไม่เพิ่มตารางประวัติเส้นทางนอก Data Dictionary |
-| Alert / Geofence | `alerts`, `alert_rules`, `geofences` | API และการประมวลผลเหตุการณ์ (overspeed, geofence, GPS offline) สร้างแล้ว |
-| API Integration | `api_integrations`, `api_request_logs` | ออก/หมุน/เพิกถอน API Key และ verify + Rate Limit สร้างแล้ว; gateway ยังไม่บังคับใช้ API Key |
-| Audit / Session | `system_log`, `auth_sessions` | ไม่เก็บ password/token จริงใน log; Refresh Token เก็บเป็น hash |
+## 6. ขอบเขตงานพัฒนาต่อ
 
-ชื่อตารางและฟิลด์ยึด Data Dictionary ใน PDF เป็นหลัก รายการทุกคอลัมน์อยู่ใน docs/data-dictionary.json; การปรับชนิดข้อมูลสำหรับ PostgreSQL อธิบายใน docs/DATABASE.md
+1. **GPS จากมือถือถึงแผนที่จริง** · ทดสอบ Driver ที่มีงานกำลังทำให้ส่งจุดผ่าน Gateway แล้วอ่านกลับจาก GPS Data แสดงเวลาของจุดและสถานะความสดบน Dashboard ใช้จุดชุดเดียวกันทำประวัติรายรถ พัฒนา API ภาพรวมกองรถและการสรุปประวัติเป็น read model แล้วตัดสินใจแยก deployment เมื่อมีเหตุผลเรื่องโหลดหรือการออกเวอร์ชัน
+2. **แจ้งเตือนและรายงาน** · ใช้จุดที่บันทึกแล้วกับกฎและ geofence ของบริษัท หากผู้บริโภคต้องได้รับเหตุการณ์ครบ ให้บันทึกเหตุการณ์ใน transactional outbox ของเจ้าของข้อมูลและให้ผู้บริโภคจัดการ event ซ้ำได้ จัดทำ API สำหรับรายงานและ integration ตาม scope ที่อนุญาต
+3. **ความทนทานของงานข้ามบริการและการ deploy** · ออกแบบ registration ให้มีสถานะที่ตรวจสอบ/กู้ต่อได้และทำ idempotency ก่อน retry การเขียน เพิ่มการจำกัดคำขอ health/readiness, logs/metrics/traces ที่ไม่บันทึก secrets หรือพิกัดละเอียดเกินจำเป็น และตรวจ API contract กับ migration ใน CI ก่อนปล่อย image ตามเวอร์ชัน แยก secrets ต่อบริการและเตรียม HTTPS ที่ Gateway/เว็บเมื่อจะให้เครื่องจริงเข้าถึง
 
-## 7. ขอบเขตตามบทบาท
-
-- **Platform Admin:** อนุมัติ/จัดการบริษัทและ Workspace, ดูสถานะการเชื่อมต่อระดับแพลตฟอร์ม, บริหารบัญชีกลาง, dashboard ภาพรวม และ audit
-- **Company Admin:** จัดการผู้ใช้/สิทธิ์ รถ GPS/API connection การมอบหมายงาน และ dashboard/รายงานของบริษัทตัวเอง
-- **Dispatcher:** ติดตามตำแหน่ง/สถานะ/คุณภาพข้อมูล GPS ดูเส้นทางและงาน ประสาน Driver และจัดการเหตุการณ์ตามสิทธิ์
-- **Driver:** ดูงานของตน เริ่ม/จบงาน ส่งตำแหน่งจากมือถือ แจ้งสถานะหรือปัญหา และดูประวัติงานที่อนุญาต
-- **External API Client:** client credential ที่มี scope และผูกกับบริษัท ไม่ใช่บทบาทหน้าจอของผู้ใช้
-
-## 8. ข้อจำกัดของ demo และข้อมูลรถ
-
-- โทรศัพท์เป็นแหล่งข้อมูล GPS สำหรับ demo เท่านั้น; ให้เก็บ `source_type` ชัดเจนเพื่อแยกจาก GPS hardware/vendor
-- ความถี่และความแม่นยำขึ้นกับการอนุญาต Location, OS, แบตเตอรี่, เครือข่าย และพฤติกรรมแอป โทรศัพท์อาจหยุดส่งเมื่ออยู่เบื้องหลังหรือ offline
-- “เรียลไทม์” หมายถึงข้อมูลล่าสุดที่ได้รับตามรอบส่งและเครือข่าย ไม่รับประกันการอัปเดตต่อเนื่อง
-- การระบุความเร็วเกินกำหนดทำได้เมื่อมีข้อมูลความเร็ว/กฎที่กำหนด; การวิเคราะห์พฤติกรรมต้องมีข้อมูลและเกณฑ์ที่รองรับ
-- สภาพเครื่องยนต์/ชิ้นส่วนต้องอาศัย sensor, OBD หรือ provider ที่รองรับ พิกัด GPS ไม่พอสำหรับสรุปสุขภาพรถ
-- หากไม่มีแผนที่/route provider ที่เลือกไว้ ให้แสดงฉาก 3D demo ที่ติดป้ายชัดเจน ไม่กล่าวอ้างว่าเป็นถนนหรือระยะทางที่แม่นยำ
-
-## 9. ลำดับทำงานที่เข้ากับแผนโครงงาน
-
-1. **พื้นฐาน:** กำหนด schema/migrations, company/workspace, auth/roles, รถ/Driver, GPS provider contract และ endpoint รับตำแหน่ง demo
-2. **ปฏิบัติงาน:** หน้า tracking และ route history, Driver APK/demo, งานขนส่ง/assignment, alert, report และตรวจคุณภาพข้อมูล
-3. **ขยายระบบ:** geofence, analytics/driver behavior ที่มีข้อมูลรองรับ, API สำหรับลูกค้าองค์กร, dashboard/report เชิงลึก และ hardening ด้านประสิทธิภาพ/ความปลอดภัย
-
-ลำดับนี้อิงแผนใน brief แต่ผู้ใช้สามารถจัดลำดับใหม่ได้ หากเริ่มงานเฉพาะ feature ให้ทำ end-to-end slice ที่เล็กที่สุดและรักษา tenant isolation ตั้งแต่ต้น
-
-## 10. แนวทางให้ Codex ทำงานต่อ
-
-- เริ่มอ่าน root `AGENTS.md`, เอกสารนี้ และ `AGENTS.md` ของโฟลเดอร์ที่จะแก้
-- สำรวจไฟล์จริงและ scripts ก่อนแก้; อย่าสมมติว่า target structure มีอยู่แล้ว
-- สำหรับงาน UI ให้อ่าน `apps/web/AGENTS.md` และคู่มือ Next.js ใน dependency ที่ติดตั้งอยู่ก่อนแก้ API/framework behavior
-- ระบุข้อมูลว่าเป็น live, delayed, unavailable หรือ demo ให้ชัดใน API และ UI
-- รักษาการแยกข้อมูลบริษัทที่ API boundary; อย่าส่ง GPS ของบริษัทหนึ่งให้ผู้ใช้อีกบริษัท
-- ไม่เพิ่มการเชื่อมต่อผู้ให้บริการ, การเปิดเผยข้อมูล, หรือการใช้ location เกินที่ผู้ใช้อนุญาต
-- อัปเดตเอกสารนี้เมื่อมีการสร้าง/ย้าย service หรือเมื่อ target architecture ถูกตัดสินใจจริง
-
-## 11. แหล่งอ้างอิงและหมายเหตุ
-
-เอกสารนี้สรุปจากเอกสารโครงงาน GPS ที่ผู้ใช้แนบ และข้อกำหนดเพิ่มเติมของเจ้าของโครงการเรื่อง Next.js/TypeScript, Elysia, PostgreSQL/PostgREST, Bun, Three.js, Docker และ Android APK สำหรับ demo
-
-Markdown ต้นฉบับมีข้อความบาง bullet ที่แสดงอักขระผิด encoding (mojibake) จึงไม่ถอดความบรรทัดที่อ่านไม่ได้เป็น requirement ใหม่; ให้ยึดหัวข้อและเนื้อหาที่อ่านได้ รวมถึงข้อจำกัดที่ระบุชัดในเอกสาร หากต้องตีความ bullet ที่เสียหาย ให้ตรวจต้นฉบับที่อ่านได้หรือถามเจ้าของโครงการก่อน
+อ่าน [สถานะ API และกติกาการเชื่อมบริการ](INTEGRATION.md), [Auth](AUTH.md) และ README ของบริการก่อนเพิ่ม endpoint สำหรับการพัฒนาใน repository ให้ทำตาม [AGENTS.md](../AGENTS.md) และอัปเดตเอกสารนี้เมื่อเปลี่ยนขอบเขตบริการ เส้นทาง API หรือชุด deploy

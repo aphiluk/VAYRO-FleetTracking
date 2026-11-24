@@ -107,24 +107,28 @@ export async function updateDevice(ctx: Ctx, id: string, body: { vehicle_id?: st
   return toGpsDevice(row);
 }
 
-// "Delete" only disables ingestion; the device and its position history are kept.
-export async function disableDevice(ctx: Ctx, id: string) {
+export async function setDeviceEnabled(ctx: Ctx, id: string, enabled: boolean) {
   const { identity, ip } = ctx;
   requireRole(identity, ...WRITERS);
   const current = await findInScope(prisma, identity, id);
   const row = await prisma.$transaction(async (tx) => {
     await devices.lock(tx, current.gps_device_id);
     const device = await findInScope(tx, identity, id);
-    const closed = await devices.update(tx, device.gps_device_id, {
-      connection_status: "disconnected",
-      connection_config: { ...(settingsOf(device.connection_config) ?? {}), disabled: true } as Prisma.InputJsonObject,
+    const wasDisabled = isDisabled(device.connection_config);
+    if (wasDisabled === !enabled) return device;
+    const updated = await devices.update(tx, device.gps_device_id, {
+      connection_status: enabled ? undefined : "disconnected",
+      connection_config: { ...(settingsOf(device.connection_config) ?? {}), disabled: !enabled } as Prisma.InputJsonObject,
     });
-    await audit({ companyId: device.company_id, userId: identity.user_id, action: "gps_device.disable", entityType: "gps_device", entityId: device.gps_device_id,
-      oldValue: { connection_status: device.connection_status }, newValue: { disabled: true }, ip }, tx);
-    return closed;
+    await audit({ companyId: device.company_id, userId: identity.user_id, action: enabled ? "gps_device.enable" : "gps_device.disable", entityType: "gps_device", entityId: device.gps_device_id,
+      oldValue: { disabled: wasDisabled, connection_status: device.connection_status }, newValue: { disabled: !enabled }, ip }, tx);
+    return updated;
   });
   return toGpsDevice(row);
 }
+
+// The existing DELETE route disables the source and preserves the record and position history.
+export const disableDevice = (ctx: Ctx, id: string) => setDeviceEnabled(ctx, id, false);
 
 // ---- used by gps-data-service through /internal ----
 

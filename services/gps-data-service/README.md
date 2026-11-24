@@ -6,18 +6,19 @@ Receives GPS points from devices, providers or a driver's phone, validates them 
 | --- | --- |
 | Database | `gps_data_db` (role `gps_data_svc`), Prisma schema in `prisma/schema.prisma` |
 | Owns tables | `gps_locations` |
-| Gateway prefix | see `gateway/src/index.ts` |
+| Gateway prefix | `/api/v1/gps` |
 
 ## Data quality and events (PDF page 21, section 5.3)
 
 - **Duplicates:** `external_record_id` is unique per device (`409 DUPLICATE_RECORD`).
 - **Abnormal data:** every point carries `anomalies`, a list that is empty for a normal point. `null_island` = exactly (0, 0). `impossible_speed` = getting from the stored point before it to this one needs more than 250 km/h. Abnormal points are stored and flagged, never dropped. Checked on ingest (against the point before it in time), on `latest`, and on `locations`.
 - **Missing data:** `GET .../locations` returns `meta.gaps`, the stretches of more than 10 minutes with no point among the points returned (`{from, to, minutes}`). Thresholds are `GAP_MS` and `MAX_PLAUSIBLE_KMH` in `src/domain/gps.ts`.
-- **Push to other services:** set `GPS_EVENT_SUBSCRIBERS` (comma separated base URLs, e.g. `http://alert-service:3000`). Each new stored point is sent to every subscriber as `POST <url>/internal/gps/locations` with `{"event":"gps_location.stored","location":{...public GPS point with anomalies}}` and the `x-internal-token` header. Delivery is fire-and-forget: a failing subscriber is only logged and never fails the device's request, so a subscriber that needs every point must also catch up through `GET /internal/locations`. Tracking, Route History and Reporting read points on demand, so they do not need the push; Alert & Geofence does. No service implements the receiving endpoint yet, so the list is empty by default.
+- **Push to other services:** `GPS_EVENT_SUBSCRIBERS` accepts comma-separated subscriber base URLs. A stored point is sent to each subscriber via `POST /internal/gps/locations` with `{"event":"gps_location.stored","location":{...public GPS point with anomalies}}` and the `x-internal-token` header. Delivery is best-effort and a failing subscriber does not fail ingestion. The list is empty by default because the repository has no subscriber implementation yet.
 
 ## Public endpoints (from the project PDF, pages 18-26)
 
 - [x] `POST /api/v1/gps/ingest`
+- [x] `GET /api/v1/gps/fleet/latest?vehicle_ids=1,2` for Company Admin and Dispatcher. The authenticated company selects the scope. Returns at most one stored fix per requested vehicle plus both timestamps, freshness and anomalies. Max 100 IDs per request. See [APK test workflow](../../docs/APK_GPS_TEST.md).
 - [x] `GET /api/v1/gps/vehicles/:vehicleId/locations`
 - [x] `GET /api/v1/gps/vehicles/:vehicleId/latest`
 

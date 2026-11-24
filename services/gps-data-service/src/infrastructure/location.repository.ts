@@ -19,6 +19,33 @@ export const previousOf = (db: Db, where: Prisma.GpsLocationWhereInput, before: 
 export const latest = (db: Db, where: Prisma.GpsLocationWhereInput) =>
   db.gpsLocation.findFirst({ where, orderBy: [{ recorded_at: "desc" }, { gps_location_id: "desc" }] });
 
+interface FleetPointRow extends LatestPoint {
+  direction_degree: number | null;
+  previous_latitude: number | null;
+  previous_longitude: number | null;
+  previous_recorded_at: Date | null;
+}
+
+// Two index lookups per requested vehicle, with both reads explicitly scoped to the same company.
+export const latestFleetPoints = (db: Db, company: bigint, ids: bigint[]) =>
+  db.$queryRaw<FleetPointRow[]>(Prisma.sql`
+    SELECT point.vehicle_id, point.latitude::float8, point.longitude::float8,
+           point.speed_kmh::float8, point.direction_degree::float8, point.recorded_at, point.received_at,
+           previous.latitude::float8 AS previous_latitude, previous.longitude::float8 AS previous_longitude,
+           previous.recorded_at AS previous_recorded_at
+    FROM (SELECT DISTINCT unnest(ARRAY[${Prisma.join(ids)}]::bigint[]) AS vehicle_id) requested
+    JOIN LATERAL (
+      SELECT vehicle_id, latitude, longitude, speed_kmh, direction_degree, recorded_at, received_at
+      FROM gps_locations
+      WHERE company_id = ${company} AND vehicle_id = requested.vehicle_id
+      ORDER BY recorded_at DESC, gps_location_id DESC LIMIT 1
+    ) point ON true
+    LEFT JOIN LATERAL (
+      SELECT latitude, longitude, recorded_at FROM gps_locations
+      WHERE company_id = ${company} AND vehicle_id = requested.vehicle_id AND recorded_at < point.recorded_at
+      ORDER BY recorded_at DESC, gps_location_id DESC LIMIT 1
+    ) previous ON true`);
+
 // ---- aggregates for reporting-service (read only) ----
 
 const idFilter = (ids: bigint[] | undefined) => (ids ? Prisma.sql`AND vehicle_id IN (${Prisma.join(ids)})` : Prisma.empty);

@@ -47,7 +47,7 @@ export function lockKeys(jobId: bigint, driverId?: bigint | null, vehicleId?: bi
 
 // When a job's window ended: null means it is still running. A job that stopped without a recorded end
 // (problem, or cancelled after a problem) ends at its last update.
-export function windowEnd(job: { actual_end_at: Date | null; job_status: JobStatus; updated_at: Date }): Date | null {
+export function windowEnd(job: { actual_end_at: Date | null; job_status: JobStatus | "accepted"; updated_at: Date }): Date | null {
   if (job.actual_end_at) return job.actual_end_at;
   return job.job_status === "in_progress" ? null : job.updated_at;
 }

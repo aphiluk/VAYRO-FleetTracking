@@ -7,8 +7,7 @@ x-healthcheck: &healthcheck
   retries: 5
   start_period: 45s
 
-# Every service that owns data has its own database and login role on this one Postgres server; none can read
-# another's data. Services call each other over HTTP (/internal/*) with INTERNAL_API_TOKEN instead.
+# Each data owner uses its own database and login role. Calls between services use /internal/*.
 x-internal: &internal
   INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?copy .env.example to .env}
 
@@ -53,10 +52,12 @@ services:
     init: true
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vayro -d vayro"]
+      # The init server only listens on a Unix socket. Wait for the server migrations will reach over TCP.
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "vayro", "-d", "vayro"]
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 30s
 
   # 1. Authentication. Owns: auth_sessions. Signs tokens and tells other services who a caller is.
   auth-service:
@@ -78,8 +79,6 @@ services:
         condition: service_healthy
       company-service:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:${AUTH_PORT:-3002}:3000"
     init: true
     restart: unless-stopped
     healthcheck: *healthcheck
@@ -118,13 +117,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:${USER_PORT:-3003}:3000"
     init: true
     restart: unless-stopped
     healthcheck: *healthcheck
 
-  # 4. Vehicle. Owns: vehicle_types, vehicles. Internal lookups only for now (no public API yet).
+  # 4. Vehicle. Owns vehicle_types and vehicles, with public company-scoped management APIs.
   vehicle-service:
     build:
       context: .
@@ -135,6 +132,8 @@ services:
       <<: *internal
       DATABASE_URL: postgres://vehicle_svc:${DB_PASSWORD_VEHICLE:?copy .env.example to .env}@postgres:5432/vehicle_db
       AUTH_SERVICE_URL: http://auth-service:3000
+      USER_SERVICE_URL: http://user-service:3000
+      COMPANY_SERVICE_URL: http://company-service:3000
     depends_on:
       postgres:
         condition: service_healthy
@@ -174,7 +173,7 @@ services:
       <<: *internal
       DATABASE_URL: postgres://gps_data_svc:${DB_PASSWORD_GPS_DATA:?copy .env.example to .env}@postgres:5432/gps_data_db
       TRACKING_API_TOKENS: "${TRACKING_API_TOKENS:-}"
-      # Optional, comma separated base URLs of services that want every new point pushed (e.g. http://alert-service:3000).
+      # Optional best-effort HTTP delivery. Alert receives events when configured below.
       GPS_EVENT_SUBSCRIBERS: "${GPS_EVENT_SUBSCRIBERS:-}"
       AUTH_SERVICE_URL: http://auth-service:3000
       COMPANY_SERVICE_URL: http://company-service:3000
@@ -194,14 +193,13 @@ services:
         condition: service_healthy
       transport-service:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:${TRACKING_PORT:-3004}:3000"
     init: true
     restart: unless-stopped
     healthcheck: *healthcheck
 
   # 7. Vehicle Tracking. No database; skeleton (no routes yet).
   tracking-service:
+    profiles: [scaffold]
     build:
       context: .
       target: api
@@ -234,7 +232,7 @@ services:
     restart: unless-stopped
     healthcheck: *healthcheck
 
-  # 9. Transport Job. Owns: transport_jobs.
+  # 9. Transport Job. Owns transport_jobs and system_log.
   transport-service:
     build:
       context: .
@@ -245,8 +243,9 @@ services:
       <<: *internal
       DATABASE_URL: postgres://transport_svc:${DB_PASSWORD_TRANSPORT:?copy .env.example to .env}@postgres:5432/transport_db
       AUTH_SERVICE_URL: http://auth-service:3000
-      VEHICLE_SERVICE_URL: http://vehicle-service:3000
       USER_SERVICE_URL: http://user-service:3000
+      VEHICLE_SERVICE_URL: http://vehicle-service:3000
+      COMPANY_SERVICE_URL: http://company-service:3000
       # Optional: raises "new job" / "job problem" alerts and pauses the offline check when a job ends.
       ALERT_SERVICE_URL: http://alert-service:3000
     depends_on:
@@ -278,7 +277,7 @@ services:
     restart: unless-stopped
     healthcheck: *healthcheck
 
-  # 11. Reporting & Dashboard. No database; skeleton (no routes yet).
+  # 11. Reporting & Dashboard. Stateless company counts from owning services.
   reporting-service:
     build:
       context: .
@@ -287,19 +286,19 @@ services:
         SERVICE: services/reporting-service
     environment:
       <<: *internal
-      AUTH_SERVICE_URL: http://auth-service:3000
       COMPANY_SERVICE_URL: http://company-service:3000
-      USER_SERVICE_URL: http://user-service:3000
-      VEHICLE_SERVICE_URL: http://vehicle-service:3000
       GPS_DEVICE_SERVICE_URL: http://gps-device-service:3000
       GPS_DATA_SERVICE_URL: http://gps-data-service:3000
-      TRANSPORT_SERVICE_URL: http://transport-service:3000
       ALERT_SERVICE_URL: http://alert-service:3000
+      AUTH_SERVICE_URL: http://auth-service:3000
+      USER_SERVICE_URL: http://user-service:3000
+      VEHICLE_SERVICE_URL: http://vehicle-service:3000
+      TRANSPORT_SERVICE_URL: http://transport-service:3000
     init: true
     restart: unless-stopped
     healthcheck: *healthcheck
 
-  # 12. Integration & Logging. Owns: api_integrations, api_request_logs, system_log. Skeleton (no routes yet).
+  # 12. Integration & Logging. Owns: api_integrations, api_request_logs, system_log.
   integration-service:
     build:
       context: .
@@ -321,6 +320,25 @@ services:
     restart: unless-stopped
     healthcheck: *healthcheck
 
+  # 13. Navigation preview. Stateless Photon geocoding and Valhalla automobile routing.
+  navigation-service:
+    build:
+      context: .
+      target: api
+      args:
+        SERVICE: services/navigation-service
+    environment:
+      <<: *internal
+      AUTH_SERVICE_URL: http://auth-service:3000
+      NAVIGATION_GEOCODING_URL: ${NAVIGATION_GEOCODING_URL:-https://photon.komoot.io/api/}
+      NAVIGATION_ROUTING_URL: ${NAVIGATION_ROUTING_URL:-https://valhalla1.openstreetmap.de/route}
+    depends_on:
+      auth-service:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+    healthcheck: *healthcheck
+
   gateway:
     build:
       context: .
@@ -334,15 +352,15 @@ services:
       VEHICLE_SERVICE_URL: http://vehicle-service:3000
       GPS_DEVICE_SERVICE_URL: http://gps-device-service:3000
       GPS_DATA_SERVICE_URL: http://gps-data-service:3000
-      TRACKING_SERVICE_URL: http://tracking-service:3000
-      ROUTE_HISTORY_SERVICE_URL: http://route-history-service:3000
       TRANSPORT_SERVICE_URL: http://transport-service:3000
-      ALERT_SERVICE_URL: http://alert-service:3000
       REPORTING_SERVICE_URL: http://reporting-service:3000
+      NAVIGATION_SERVICE_URL: http://navigation-service:3000
+      ROUTE_HISTORY_SERVICE_URL: http://route-history-service:3000
+      ALERT_SERVICE_URL: http://alert-service:3000
       INTEGRATION_SERVICE_URL: http://integration-service:3000
       WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}
     ports:
-      - "127.0.0.1:${GATEWAY_PORT:-3001}:3000"
+      - "${GATEWAY_BIND_IP:-127.0.0.1}:${GATEWAY_PORT:-3001}:3000"
     init: true
     restart: unless-stopped
     healthcheck: *healthcheck

@@ -1,6 +1,7 @@
-import { ApiError, parseId, requireRole, type Identity } from "@vayro/service-kit";
+import { ApiError, parseId, parseIdList, requireRole, type Identity } from "@vayro/service-kit";
+import type { FleetGpsSnapshot } from "../../../../packages/shared-types";
 import type { FleetDirectory } from "../adapters/fleet-directory";
-import { anomaliesOf, assertHistoryRange, findGaps, type Fix } from "../domain/gps";
+import { anomaliesOf, assertHistoryRange, findGaps, freshness, type Fix } from "../domain/gps";
 import * as locations from "../infrastructure/location.repository";
 import { prisma } from "../lib/prisma";
 import { toGpsLocation } from "../schemas/gps.schema";
@@ -53,4 +54,32 @@ export async function vehicleHistory(identity: Identity, fleet: FleetDirectory, 
 export async function vehicleLatest(identity: Identity, fleet: FleetDirectory, vehicleId: string) {
   requireRole(identity, ...READERS);
   return latestFor(await vehicleCompany(identity, fleet, vehicleId), vehicleId);
+}
+
+export async function fleetLatest(identity: Identity, vehicleIds: string): Promise<FleetGpsSnapshot> {
+  requireRole(identity, "company_admin", "dispatcher");
+  if (!identity.company_id) throw new ApiError(403, "FORBIDDEN", "An active company is required");
+  const ids = parseIdList(vehicleIds, parseId, 100);
+  if (!ids?.length) throw new ApiError(422, "VALIDATION_ERROR", "Provide at least one vehicle id");
+
+  const rows = await locations.latestFleetPoints(prisma, parseId(identity.company_id), ids);
+  return {
+    company_id: identity.company_id,
+    points: rows.map((row) => ({
+      vehicle_id: String(row.vehicle_id),
+      latitude: row.latitude,
+      longitude: row.longitude,
+      speed_kmh: row.speed_kmh,
+      direction_degree: row.direction_degree,
+      recorded_at: row.recorded_at.toISOString(),
+      received_at: row.received_at.toISOString(),
+      freshness: freshness(row.recorded_at) === "current" ? freshness(row.received_at) : "delayed",
+      anomalies: anomaliesOf(
+        { latitude: row.latitude, longitude: row.longitude, recordedAt: row.recorded_at },
+        row.previous_recorded_at && row.previous_latitude !== null && row.previous_longitude !== null
+          ? { latitude: row.previous_latitude, longitude: row.previous_longitude, recordedAt: row.previous_recorded_at }
+          : null,
+      ),
+    })),
+  };
 }

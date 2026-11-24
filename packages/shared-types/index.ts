@@ -35,6 +35,11 @@ export interface LoginRequest {
   password: string;
 }
 
+/** Signed-in identity enriched by Auth with its own workspace's display name. */
+export interface AuthenticatedUser extends User {
+  company_name: string | null;
+}
+
 export interface TokenPair {
   access_token: string;
   refresh_token: string;
@@ -43,7 +48,7 @@ export interface TokenPair {
   expires_in: number;
 }
 
-export type LoginResponse = TokenPair & { user: User };
+export type LoginResponse = TokenPair & { user: AuthenticatedUser };
 
 export interface RefreshRequest {
   refresh_token: string;
@@ -148,4 +153,172 @@ export interface GpsGap {
   from: string;
   to: string;
   minutes: number;
+}
+
+export type FleetGpsPoint = Pick<GpsLocation,
+  "vehicle_id" | "latitude" | "longitude" | "speed_kmh" | "direction_degree" |
+  "recorded_at" | "received_at" | "freshness" | "anomalies"
+>;
+
+export interface FleetGpsSnapshot {
+  company_id: string;
+  points: FleetGpsPoint[];
+}
+
+// Navigation preview uses road-provider data. Coordinates in GeoJSON are [longitude, latitude].
+export interface NavigationPoint {
+  latitude: number;
+  longitude: number;
+}
+
+export interface NavigationPlace extends NavigationPoint {
+  id: string;
+  label: string;
+}
+
+export interface NavigationRouteRequest {
+  origin: NavigationPoint;
+  destination: NavigationPoint;
+}
+
+export interface NavigationRoute {
+  provider: "valhalla";
+  profile: "auto";
+  geometry: { type: "LineString"; coordinates: [number, number][] };
+  distance_meters: number;
+  duration_seconds: number;
+  steps: {
+    instruction: string;
+    distance_meters: number;
+    duration_seconds: number;
+    begin_shape_index: number;
+    end_shape_index: number;
+  }[];
+}
+
+export type VehicleStatus = "active" | "inactive" | "maintenance";
+
+export interface VehicleRecord {
+  vehicle_id: string;
+  company_id: string;
+  vehicle_code: string;
+  license_plate: string;
+  vehicle_type_id: string | null;
+  current_driver_id: string | null;
+  vehicle_status: VehicleStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VehicleTypeRecord {
+  vehicle_type_id: string;
+  company_id: string;
+  type_name: string;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateVehicleRequest {
+  /** Platform Admin selects the workspace. Company Admin is scoped to their own workspace. */
+  company_id?: string;
+  vehicle_code: string;
+  license_plate: string;
+  vehicle_type_id?: string | null;
+  current_driver_id?: string | null;
+  vehicle_status?: VehicleStatus;
+}
+
+export type UpdateVehicleRequest = Partial<Omit<CreateVehicleRequest, "company_id">>;
+
+export interface CreateVehicleTypeRequest {
+  company_id?: string;
+  type_name: string;
+  description?: string | null;
+  is_active?: boolean;
+}
+
+export type UpdateVehicleTypeRequest = Partial<Omit<CreateVehicleTypeRequest, "company_id">>;
+
+export type TransportJobStatus = "pending" | "assigned" | "accepted" | "in_progress" | "completed" | "cancelled" | "problem";
+
+export interface TransportJobRecord {
+  job_id: string;
+  company_id: string;
+  job_code: string;
+  job_name: string | null;
+  pickup_address: string;
+  pickup_latitude: number | null;
+  pickup_longitude: number | null;
+  delivery_address: string;
+  delivery_latitude: number | null;
+  delivery_longitude: number | null;
+  vehicle_id: string | null;
+  driver_id: string | null;
+  scheduled_start_at: string | null;
+  scheduled_end_at: string | null;
+  accepted_at: string | null;
+  actual_start_at: string | null;
+  actual_end_at: string | null;
+  job_status: TransportJobStatus;
+  problem_note: string | null;
+  cargo_description: string | null;
+  route_snapshot: NavigationRoute | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  vehicle: { vehicle_id: string; vehicle_code: string; license_plate: string; vehicle_type_name: string | null } | null;
+  driver: { user_id: string; full_name: string; email: string } | null;
+}
+
+export interface CreateTransportJobRequest {
+  company_id?: string;
+  job_code: string;
+  job_name?: string | null;
+  pickup_address: string;
+  delivery_address: string;
+  pickup_latitude?: number | null;
+  pickup_longitude?: number | null;
+  delivery_latitude?: number | null;
+  delivery_longitude?: number | null;
+  cargo_description?: string | null;
+  route_snapshot?: NavigationRoute | null;
+  scheduled_start_at?: string | null;
+  scheduled_end_at?: string | null;
+  vehicle_id?: string | null;
+  driver_id?: string | null;
+}
+
+export type UpdateTransportJobRequest = Partial<Omit<CreateTransportJobRequest, "company_id">>;
+export interface AssignTransportJobRequest { vehicle_id: string | null; driver_id: string | null }
+export interface TransportJobProblemRequest { problem_note: string }
+
+export interface EmployeeDashboardCounts {
+  company_id: string;
+  total: number;
+  by_role: Record<Exclude<Role, "platform_admin">, number>;
+  by_status: Record<AccountStatus, number>;
+}
+
+export interface VehicleDashboardCounts {
+  company_id: string;
+  total: number;
+  by_status: Record<VehicleStatus, number>;
+  by_type: { vehicle_type_id: string | null; type_name: string | null; count: number }[];
+}
+
+export interface JobDashboardCounts {
+  company_id: string;
+  total: number;
+  by_status: Record<TransportJobStatus, number>;
+}
+
+/** Counts are collected from each owning service; this is not a cross-database transaction. */
+export interface CompanyDashboardSummary {
+  company_id: string;
+  generated_at: string;
+  employees: EmployeeDashboardCounts;
+  vehicles: VehicleDashboardCounts;
+  jobs: JobDashboardCounts;
 }

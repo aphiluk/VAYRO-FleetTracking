@@ -65,3 +65,15 @@ node services/reporting-service/test/e2e.mjs           # through the gateway; se
 ```
 
 Not built (not in the PDF list for this service): scheduled reports, e-mailed reports, PDF/Excel files (CSV only), dashboards cached or stored.
+
+## Company totals for the web dashboard
+
+`GET /api/v1/dashboard/company/summary` is for Company Admin only. Auth supplies the current workspace; query parameters, including a caller-selected company, are rejected. The role rules for the platform and date-filtered dashboards are documented above.
+
+Reporting calls `/internal/dashboard/summary?company_id=<authenticated company>` on User, Vehicle and Transport with the internal service token. Each owning service aggregates its own PostgreSQL database with company-scoped queries; Reporting has no database credentials and never reads another service's tables directly. Responses include `company_id`, `generated_at`, and employee/vehicle/job totals with role/status/type breakdowns. Employee totals include Company Admin, Dispatcher and Driver accounts across active/inactive/suspended statuses. Vehicle totals include active/inactive/maintenance records. Job totals include all seven statuses, including completed and cancelled jobs. Counts cover all records, without list pagination or a date filter.
+
+Every source must return a valid, consistent summary for the requested company. A failed source or malformed/mismatched counts produces an error, not a partial set of zeroes. There is no cross-database snapshot transaction. Vehicle status/type counts share a repeatable-read snapshot within vehicle_db. No GPS moving/parked, component health, revenue, or historical metrics are inferred.
+
+The web overview retains its existing floating window. It fetches through Next.js `/api/dashboard/company` and the Gateway with HttpOnly authentication, shows loading/empty/error states, retains the last successful result explicitly on refresh errors, and refreshes on demand, on return/online, and every 30 seconds while visible.
+
+Required environment: `AUTH_SERVICE_URL`, `INTERNAL_API_TOKEN`, `USER_SERVICE_URL`, `VEHICLE_SERVICE_URL`, `TRANSPORT_SERVICE_URL`. Compose already supplies these. Run `bun test test/dashboard.test.ts` for Reporting authorization, parser and source-failure tests. Each owning service also has `test/dashboard.test.ts` against its local database, with unique retained test-company fixtures, covering more than 100 records, tenant isolation, empty summaries and internal authentication.

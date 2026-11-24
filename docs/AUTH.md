@@ -9,14 +9,14 @@ User endpoints run in `services/user-service` and company registration in `servi
 | --- | --- | --- |
 | `users` | `user_id`, `company_id`, `full_name`, `email`, `password_hash`, `role`, `phone`, `account_status` | Email unique across the platform; Argon2id password. `platform_admin` has NULL company; other roles require a company. |
 | `company` | `company_id`, `workspace_status` | Company accounts require an active workspace. Pending, suspended and rejected are denied. |
-| `auth_sessions` | `session_id`, `user_id`, `refresh_token_hash`, `expires_at`, `revoked_at`, `last_used_at`, `ip_address`, `user_agent`, `created_at` | Refresh secret stored as SHA-256 only; FK to users; unique hash; index `(user_id, expires_at)`. |
+| `auth_sessions` | `session_id`, `user_id`, `refresh_token_hash`, `expires_at`, `revoked_at`, `last_used_at`, `ip_address`, `user_agent`, `created_at` | Refresh secret stored as SHA-256 only. User ID references the User service. Unique hash and index on `(user_id, expires_at)`. |
 
-PostgreSQL uses identity BIGINT, TIMESTAMPTZ and CHECK constraints to represent the PDF's examples. IDs are JSON strings. The shared database now implements all 14 dictionary tables; Auth/User uses four of them. Existing databases apply migrations 002 and 003 without resetting data; see [DATABASE.md](DATABASE.md) and [the shared API contract](API_DATA_CONTRACT.md).
+PostgreSQL uses identity BIGINT, TIMESTAMPTZ and CHECK constraints to represent the PDF's examples. IDs are JSON strings. The dictionary tables live in databases owned by their services. For upgrades from the legacy shared database, see [the database migration guide](DATABASE.md) and [the API contract](API_DATA_CONTRACT.md).
 
 ## Verification
 
 ```sh
-docker compose up --build -d --wait
+docker compose -f compose.yaml -f compose.debug.yaml up --build -d --wait
 docker compose exec -T auth-service bun test test/security.test.ts
 node services/auth-service/test/e2e.mjs
 node services/user-service/test/e2e.mjs
@@ -54,22 +54,23 @@ Send `Authorization: Bearer <access_token>`. Responses use `{success, data, mess
 
 ## Web (apps/web)
 
-The following describes a previously tested local prototype, not a Frontend delivered by the Backend branch. Frontend files remain uncommitted locally and are excluded from this change. The committed APIs can be tested independently with Postman.
+Start PostgreSQL, Auth and Gateway through Compose (`docker compose up -d --build --wait postgres company-service user-service auth-service gateway`). Open `/login` with an active Company Admin, Dispatcher or Driver account in an active workspace. For a fresh local database, use `POST /api/v1/companies/register` to create a test workspace and its Company Admin, then activate the test workspace in the local `company_db` database. See [DATABASE.md](DATABASE.md) for existing installs.
 
-Pages: `/login`, `/register`, `/dashboard` (any signed-in user), `/users` (Company Admin only). `/` redirects by session.
-
-- The browser never calls the gateway. Server Actions and Server Components call it with `API_URL` (Compose: `http://gateway:3000`).
-- Tokens live in httpOnly cookies `vayro_at` (access, 15 min) and `vayro_rt` (refresh, 7 days). Set `COOKIE_SECURE=true` when served over HTTPS.
-- An expired access token sends the page through `GET /session/refresh?next=...`, which rotates the refresh token and redirects back. Nav links use `prefetch={false}` because a background prefetch must not trigger a rotation (a reused rotated token revokes all sessions).
-- Role checks in the UI only hide links; the API enforces role and company on every call.
-- Verified in the in-app browser on Docker: register, login (error keeps the email), dashboard, create user, change role/status, logout, refresh route (including replay and `next=//evil.test`).
+- Next.js calls the Gateway from the server using `API_URL` (Compose: `http://gateway:3000`, local default: `http://127.0.0.1:3001`).
+- Login stores `vayro_at` and `vayro_rt` as HttpOnly, SameSite=Lax cookies for the access token lifetime. `vayro_rt` is used for logout. When the access token expires, sign in again. Set `COOKIE_SECURE=true` on HTTPS deployments and `COOKIE_SECURE=false` when running a local production build over plain HTTP.
+- The Dashboard checks `/api/v1/auth/me` and displays the signed-in name and role. Company Admin can use TestRole to preview the Dispatch interface. Backend authorization applies to protected API calls.
+- The employee web login routes Company Admin and Dispatcher to `/dashboard`, and Driver to `/driver`. The Driver page verifies the session and role through the Gateway, displays the signed-in name/email/workspace id, and offers logout. Dashboard requests from a Driver redirect to `/driver`; company dashboard users visiting `/driver` return to their Dashboard. Owner and Platform Admin pages are pending.
+- Driver login uses a real database account created by an authorized administrator through `POST /api/v1/users` with role `driver`. Driver jobs and job-state changes use Transport through the Gateway, with database persistence. The home page derives work notices from assigned jobs. Road routes use Navigation previews without live GPS. Test credentials are generated at provision time and are never committed.
+- Sign out from the Dashboard profile menu or More page, or the fourth item in the Driver bottom menu. The Driver menu also appears in the expanded map sheet. Its logout button is disabled while submitting. The web clears both cookies and asks Auth to revoke the session.
+- The `/register` form calls `POST /api/v1/companies/register` through the Gateway and shows a pending confirmation. It uses the first admin's name and email as the company contact. The workspace must be activated before the admin can sign in.
+- The Dashboard map layouts default to real company vehicle registrations and Transport problem reports. Vehicle details show the permanent driver and assigned job. Missing GPS is labelled unavailable and no simulated position is assigned to a real vehicle; the separate demo toggle enables the simulated fleet. The Company Admin overview counts employee accounts, vehicles and transport jobs from the owning databases through Reporting and Gateway, scoped to the authenticated company. Vehicle management and transport jobs use real company-scoped APIs; the User API is available independently and the Add Employee invitation form is still a demo.
 
 ## Not done / known limits
 
 - No rate limiting or lockout on login (spec lists 429 for API clients).
 - Approve/reject company is a separate Company module. For local tests, activate a test company with SQL. Operator-only Platform Admin setup is documented in [USER.md](USER.md).
 - Dispatcher/Driver have no admin permissions here; their domain permissions come with the vehicle/job services.
-- Gateway supplies `x-forwarded-for` for audit metadata. Local clients can also reach the localhost-only service ports, so this metadata is not an authorization source.
+- Gateway supplies `x-forwarded-for` for audit metadata. Authorization uses authenticated identity and domain permissions. The debug Compose override opens direct service ports on localhost.
 - Platform Admin pages are not built. Registered companies stay `pending` until SQL (or a future Platform Admin screen) activates them.
 - No page for the user's own profile edit (`PUT /users/me` exists in the API).
 - The e2e test needs the Docker stack and leaves its test companies/users in the database; it is not a unit test suite.

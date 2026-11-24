@@ -6,7 +6,7 @@ API keys for external clients (create, rotate, revoke, permissions, rate limit),
 | --- | --- |
 | Database | `integration_db` (role `integration_svc`), Prisma schema in `prisma/schema.prisma` |
 | Owns tables | `api_integrations`, `api_request_logs`, `system_log` |
-| Gateway prefix | see `gateway/src/index.ts` |
+| Gateway prefix | Reserved for future Integration APIs |
 
 ## Public endpoints (from the project PDF, pages 18-26)
 
